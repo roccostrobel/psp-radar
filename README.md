@@ -6,11 +6,27 @@ Nachfolger von [`psp-detector`](https://github.com/roccostrobel/psp-detector) mi
 
 ---
 
-## Ohne Installation ausprobieren
+## Loslegen
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/roccostrobel/psp-radar)
+Einmalig einrichten:
 
-Auf den Knopf klicken. GitHub richtet alles ein — Python, Chromium, Abhängigkeiten — und öffnet die Oberfläche automatisch. Kein Download, kein Terminal, keine Konfiguration. Der erste Start dauert zwei bis drei Minuten, danach geht es sofort.
+```bash
+git clone https://github.com/roccostrobel/psp-radar.git
+cd psp-radar
+./einrichten.sh
+```
+
+Danach genügt ein **Doppelklick auf `start-lokal.command`**. Der Starter prüft die Umgebung, startet den Server und öffnet die Oberfläche. Fenster offen lassen, solange du das Tool nutzt.
+
+Wenn etwas nicht stimmt, sagt es das vorher:
+
+```bash
+.venv/bin/psp-radar doctor
+```
+
+### Zu GitHub Codespaces
+
+Die Codespaces-Einrichtung liegt in `.devcontainer/` und wird von der CI geprüft, hat aber **in der Praxis nicht funktioniert** — zwei Anläufe scheiterten an Umgebungsproblemen im Container, die als Erkennungsfehler erschienen. Bis das belastbar gelöst ist, ist der lokale Weg der empfohlene. Details in [`docs/CODESPACES.md`](docs/CODESPACES.md).
 
 ---
 

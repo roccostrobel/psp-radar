@@ -10,13 +10,20 @@ keywords = ["payments", "psp", "ecommerce", "detection", "fintech"]
 
 dependencies = [
     "httpx[http2]>=0.27",
-    # Exakt gepinnt und nicht ">=": Die Version muss zum Chromium-Build im
-    # Playwright-Image passen (.devcontainer und Dockerfile nutzen
-    # v1.48.0-noble). Eine neuere Bibliothek sucht einen anderen
-    # Browser-Build als im Image liegt und scheitert beim Start mit
-    # "Executable doesn't exist" — genau der Fehler, der den Codespace
-    # unbrauchbar machte.
-    "playwright==1.48.0",
+    # Untergrenze statt exakter Pin.
+    #
+    # Kurz war die Version auf 1.48.0 festgenagelt, damit sie zum
+    # Chromium-Build im Playwright-Image passt. Das hat einen unangenehmen
+    # Nebeneffekt: Auf einem Rechner, der schon eine neuere Playwright-
+    # Version mit passendem Chromium hat, stuft die Installation herunter —
+    # und danach sucht die Bibliothek einen älteren Browser-Build, der nicht
+    # da ist. Genau der Fehler, den der Pin verhindern sollte, nur
+    # andersherum.
+    #
+    # Richtiger Weg: Bibliothek frei lassen und den Browser passend zur
+    # installierten Version holen (`playwright install chromium`). Genau das
+    # macht `psp-radar doctor` sichtbar und der Dockerfile automatisch.
+    "playwright>=1.48",
     "pydantic>=2.9",
     "typer>=0.12",
     "rich>=13.9",

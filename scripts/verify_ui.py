@@ -21,7 +21,7 @@ UI = "http://127.0.0.1:8765"
 OUT = "/tmp"
 
 
-async def pruefe(liste: bool) -> int:
+async def pruefe(liste: bool, modus: str = "statisch", shop: str = "https://www.snocks.com") -> int:
     fehler: list[str] = []
 
     async with async_playwright() as pw:
@@ -36,17 +36,16 @@ async def pruefe(liste: bool) -> int:
         await page.screenshot(path=f"{OUT}/radar_start.png", full_page=True)
         print("Startseite geladen")
 
-        # Modus "statisch" — wenige Sekunden, kein Browser im Server nötig
-        await page.click("label:has(input[value=statisch])")
+        await page.click(f"label:has(input[value={modus}])")
 
         if liste:
             await page.click("#tab-liste")
-            await page.fill("#urls", "https://www.snocks.com\nhttps://www.waterdrop.de")
+            await page.fill("#urls", f"{shop}\nhttps://www.waterdrop.de")
             # Im Listen-Modus darf das Einzelfeld nicht mehr sichtbar sein
             if await page.locator("#url").is_visible():
                 fehler.append("Einzelfeld bleibt im Listen-Modus sichtbar")
         else:
-            await page.fill("#url", "https://www.snocks.com")
+            await page.fill("#url", shop)
             if await page.locator("#feld-liste").is_visible():
                 fehler.append("Listenfeld bleibt im Einzel-Modus sichtbar")
 
@@ -91,4 +90,7 @@ async def pruefe(liste: bool) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(pruefe("--liste" in sys.argv)))
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    modus = next((a.split("=")[1] for a in sys.argv if a.startswith("--modus=")), "statisch")
+    shop = args[0] if args else "https://www.snocks.com"
+    sys.exit(asyncio.run(pruefe("--liste" in sys.argv, modus, shop)))
