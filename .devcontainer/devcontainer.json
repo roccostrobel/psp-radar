@@ -1,15 +1,22 @@
 {
   "name": "psp-radar",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
 
-  "features": {
-    "ghcr.io/devcontainers/features/github-cli:1": {}
-  },
+  // Das offizielle Playwright-Image bringt Chromium und alle
+  // Systembibliotheken bereits mit. Vorher wurde ein normales Python-Image
+  // genutzt und Chromium per "playwright install --with-deps" nachgeladen --
+  // dieser Befehl ruft intern apt-get auf und braucht Root. Im Codespace
+  // laeuft der Benutzer "vscode" ohne Root, der Befehl scheiterte, und weil
+  // im Setup "set -e" gilt, brach das ganze Skript ab. Chromium fehlte
+  // danach, und die Browser-Stufen liefen in einen Startfehler.
+  //
+  // WICHTIG: Die Version hier muss zur gepinnten playwright-Version in
+  // pyproject.toml passen. Sonst sucht das Python-Paket einen anderen
+  // Chromium-Build als im Image liegt -- derselbe Fehler mit anderer Ursache.
+  "image": "mcr.microsoft.com/playwright/python:v1.48.0-noble",
 
   "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start.sh",
 
-  // 8765 wird automatisch im Browser geoeffnet, sobald der Codespace steht.
-  // Kollegen muessen nichts eingeben und nichts starten.
   "forwardPorts": [8765],
   "portsAttributes": {
     "8765": {
@@ -18,23 +25,13 @@
     }
   },
 
-  "postAttachCommand": "nohup .venv/bin/psp-radar serve --host 0.0.0.0 --port 8765 > /tmp/psp-radar.log 2>&1 &",
-
   "customizations": {
     "vscode": {
       "extensions": ["ms-python.python", "charliermarsh.ruff"],
-      "settings": {
-        "python.defaultInterpreterPath": ".venv/bin/python"
-      }
+      "settings": { "python.defaultInterpreterPath": ".venv/bin/python" }
     }
   },
 
-  // Chromium braucht Luft. 2 Kerne und 8 GB kosten doppelte Kern-Stunden,
-  // laufen aber deutlich stabiler als die kleinste Variante.
-  "hostRequirements": {
-    "cpus": 2,
-    "memory": "8gb"
-  },
-
-  "remoteUser": "vscode"
+  // Chromium braucht Luft. 2 Kerne und 8 GB laufen stabil.
+  "hostRequirements": { "cpus": 2, "memory": "8gb" }
 }

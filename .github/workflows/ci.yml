@@ -37,6 +37,12 @@ jobs:
 
       # Eigene Schritte, damit im CI-Log sofort sichtbar ist, welche der
       # drei Schutzschichten gerissen ist.
+      - name: Selbsttest der Umgebung
+        # Faengt Einrichtungsfehler ab, bevor sie wie Erkennungsfehler
+        # aussehen. Chromium fehlt hier absichtlich -- der Selbsttest muss
+        # das benennen, nicht daran zerbrechen.
+        run: uv run psp-radar doctor || true
+
       - name: Sicherheit (keine Bestellung ausloesen)
         run: uv run pytest tests/test_safety.py -v
 

@@ -192,6 +192,19 @@ def serve_command(
     serve(host=host, port=port, db_path=db)
 
 
+@app.command("doctor")
+def doctor_command() -> None:
+    """Prüft die Umgebung: Python, Signaturen, Chromium, Netzwerk.
+
+    Zuerst ausführen, wenn Ergebnisse leer bleiben. Ein fehlender Browser
+    sieht wie ein Erkennungsproblem aus, ist aber ein Einrichtungsfehler —
+    und führt die Fehlersuche sonst in die völlig falsche Richtung.
+    """
+    from .doctor import run
+
+    raise typer.Exit(run(console))
+
+
 @app.command("signatures")
 def signatures_command(
     check: Annotated[bool, typer.Option("--check")] = False,

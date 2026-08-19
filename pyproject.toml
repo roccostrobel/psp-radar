@@ -10,7 +10,13 @@ keywords = ["payments", "psp", "ecommerce", "detection", "fintech"]
 
 dependencies = [
     "httpx[http2]>=0.27",
-    "playwright>=1.48",
+    # Exakt gepinnt und nicht ">=": Die Version muss zum Chromium-Build im
+    # Playwright-Image passen (.devcontainer und Dockerfile nutzen
+    # v1.48.0-noble). Eine neuere Bibliothek sucht einen anderen
+    # Browser-Build als im Image liegt und scheitert beim Start mit
+    # "Executable doesn't exist" — genau der Fehler, der den Codespace
+    # unbrauchbar machte.
+    "playwright==1.48.0",
     "pydantic>=2.9",
     "typer>=0.12",
     "rich>=13.9",

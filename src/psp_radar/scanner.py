@@ -227,12 +227,7 @@ async def scan(
             )
         )
     except Exception as exc:
-        warnings.append(
-            ScanWarning(
-                code="browser_stage_error",
-                message=f"Browser-Stufen fehlgeschlagen: {exc.__class__.__name__}: {exc}",
-            )
-        )
+        warnings.append(_browser_warnung(exc))
 
     # Der Checkout gilt nur als erreicht, wenn die Simulation das meldet.
     # Nicht daraus ableiten, ob eine Observation die Stufe CHECKOUT trägt —
@@ -243,6 +238,45 @@ async def scan(
     return _finish(
         registry, evidence, url, normalized, checkout_reached, stages_run, warnings, started, tier,
         observations=observations,
+    )
+
+
+def _browser_warnung(exc: Exception) -> ScanWarning:
+    """Übersetzt Browser-Startfehler in eine brauchbare Meldung.
+
+    Playwrights Originalmeldung ist ein Pfad plus Stacktrace. In der
+    Oberfläche sah das aus wie ein Erkennungsproblem, war aber ein
+    fehlender Browser — und schickte die Fehlersuche in die falsche
+    Richtung. Ein Werkzeug, das seine eigenen Störungen nicht benennen
+    kann, verschwendet die Zeit dessen, der es benutzt.
+    """
+    text = str(exc)
+
+    if "Executable doesn't exist" in text or "playwright install" in text:
+        return ScanWarning(
+            code="browser_fehlt",
+            message=(
+                "Chromium ist nicht installiert, deshalb konnten die Browser- und "
+                "Checkout-Stufen nicht laufen. Das Ergebnis stützt sich allein auf "
+                "die statische Prüfung und bleibt deshalb oft leer — der "
+                "Zahlungsdienstleister wird meist erst im Checkout sichtbar. "
+                "Abhilfe: 'psp-radar doctor' ausführen, dann "
+                "'playwright install chromium'."
+            ),
+        )
+
+    if "Timeout" in text and "launch" in text:
+        return ScanWarning(
+            code="browser_start_langsam",
+            message=(
+                "Chromium liess sich nicht rechtzeitig starten. Meist zu wenig "
+                "Arbeitsspeicher — im Codespace hilft eine grössere Maschine."
+            ),
+        )
+
+    return ScanWarning(
+        code="browser_stage_error",
+        message=f"Browser-Stufen fehlgeschlagen: {exc.__class__.__name__}: {exc}",
     )
 
 
