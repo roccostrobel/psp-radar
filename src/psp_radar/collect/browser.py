@@ -7,6 +7,7 @@ tauchen die PSP-SDKs auf, die im statischen Quelltext nirgends stehen.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -94,6 +95,101 @@ class Recorder:
             if candidate.rstrip("/") == url.rstrip("/"):
                 return headers
         return next(iter(self.response_headers.values()), {})
+
+
+class LazyBrowser:
+    """Startet Chromium erst, wenn tatsächlich ein Browser gebraucht wird.
+
+    Grund: Der Trichter arbeitet den ersten Durchgang ohne Browser ab. Bei
+    einer Liste, deren Shops sich alle statisch auflösen lassen — CSP-Header
+    mit PSP-Domain, Live-Key im Quelltext —, darf kein einziges Chromium
+    starten. Vorher wurde bedingungslos eines hochgezogen und am Ende
+    ungenutzt geschlossen: rund zwei Sekunden und mehrere hundert Megabyte
+    für nichts.
+
+    Nebeneffekt, der den Fehler überhaupt sichtbar gemacht hat: Die
+    API-Tests hingen, weil ein Listenlauf über eine ungültige Domain
+    trotzdem einen Browser hochfuhr.
+    """
+
+    def __init__(self, config: ScanConfig) -> None:
+        self._config = config
+        self._playwright: Playwright | None = None
+        self._browser: Browser | None = None
+        self._lock = asyncio.Lock()
+
+    @property
+    def started(self) -> bool:
+        return self._browser is not None
+
+    async def get(self) -> Browser:
+        """Liefert den Browser und startet ihn beim ersten Aufruf.
+
+        Der Lock verhindert, dass mehrere gleichzeitig laufende Shops je ein
+        eigenes Chromium hochziehen.
+        """
+        async with self._lock:
+            if self._browser is None:
+                self._playwright = await async_playwright().start()
+                self._browser = await self._playwright.chromium.launch(
+                    headless=self._config.headless,
+                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+                )
+            return self._browser
+
+    async def new_context(self) -> BrowserContext:
+        """Eigener Kontext pro Shop — keine geteilten Cookies, kein fremder Warenkorb."""
+        browser = await self.get()
+        context = await browser.new_context(
+            user_agent=self._config.user_agent,
+            locale=self._config.locale,
+            viewport={
+                "width": self._config.viewport_width,
+                "height": self._config.viewport_height,
+            },
+            extra_http_headers={"Accept-Language": self._config.accept_language},
+            ignore_https_errors=True,
+        )
+        context.set_default_timeout(self._config.page_timeout * 1000)
+        if self._config.block_media:
+            await _block_media(context)
+        return context
+
+    async def close(self) -> None:
+        if self._browser is not None:
+            with contextlib.suppress(Exception):
+                await self._browser.close()
+            self._browser = None
+        if self._playwright is not None:
+            with contextlib.suppress(Exception):
+                await self._playwright.stop()
+            self._playwright = None
+
+
+async def _block_media(context: BrowserContext) -> None:
+    """Bilder, Videos und Schriften abbrechen.
+
+    Der Request wird von Playwright vorher protokolliert, die Erkennung
+    verliert also nichts. Gespart wird nur die Übertragung.
+    """
+    await context.route(
+        "**/*",
+        lambda route: (
+            route.abort()
+            if route.request.resource_type in BLOCKED_RESOURCES
+            else route.continue_()
+        ),
+    )
+
+
+@asynccontextmanager
+async def shared_browser(config: ScanConfig) -> AsyncIterator[LazyBrowser]:
+    """Ein Browser für viele Shops, aber nur falls überhaupt einer nötig wird."""
+    lazy = LazyBrowser(config)
+    try:
+        yield lazy
+    finally:
+        await lazy.close()
 
 
 @asynccontextmanager

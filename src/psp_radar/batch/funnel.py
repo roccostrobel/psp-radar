@@ -26,6 +26,7 @@ Shop rücksichtslos.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -47,6 +48,10 @@ class BatchProgress:
     tier_counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     failed: int = 0
     current: str = ""
+    #: Ob überhaupt ein Browser hochgefahren werden musste. Bei einer Liste,
+    #: die sich vollständig statisch auflöst, bleibt das False — der
+    #: sichtbare Beweis, dass der Trichter greift.
+    browser_gestartet: bool = False
 
     @property
     def percent(self) -> float:
@@ -98,12 +103,9 @@ async def run_batch(
     semaphore = asyncio.Semaphore(config.concurrency)
     results: dict[str, ScanResult] = {}
 
-    from ..collect.browser import browser_session
+    from ..collect.browser import shared_browser
 
-    async with browser_session(config) as (browser_ctx, _recorder):
-        browser = browser_ctx.browser
-        if browser is None:  # pragma: no cover — sollte nie eintreten
-            raise RuntimeError("Kein Browser verfügbar")
+    async with shared_browser(config) as browser:
 
         async def one(url: str) -> None:
             async with semaphore, limiter.for_url(url):
@@ -120,15 +122,9 @@ async def run_batch(
                             on_progress(progress)
                         return
 
-                # Eigener Kontext pro Shop: keine geteilten Cookies, kein
-                # Warenkorb, der von einem anderen Shop übrig ist.
-                context = await browser.new_context(
-                    user_agent=config.user_agent,
-                    locale=config.locale,
-                    viewport={"width": config.viewport_width, "height": config.viewport_height},
-                    extra_http_headers={"Accept-Language": config.accept_language},
-                    ignore_https_errors=True,
-                )
+                # Kontext nur anlegen, wenn dieser Shop überhaupt einen
+                # Browser braucht. Bei --statisch bleibt Chromium aus.
+                context = await browser.new_context() if config.enable_render else None
                 try:
                     result = await scan(url, config, context=context)
                 except Exception as exc:
@@ -142,7 +138,9 @@ async def run_batch(
                         ],
                     )
                 finally:
-                    await context.close()
+                    if context is not None:
+                        with contextlib.suppress(Exception):
+                            await context.close()
 
                 if db_path is not None:
                     from .store import save
@@ -155,6 +153,7 @@ async def run_batch(
                     on_progress(progress)
 
         await asyncio.gather(*(one(u) for u in urls))
+        progress.browser_gestartet = browser.started
 
     # Reihenfolge der Eingabe erhalten — wichtig, wenn die Ergebnisliste
     # gegen die Eingabeliste gestellt wird

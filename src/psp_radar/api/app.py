@@ -42,7 +42,7 @@ ACCESS_CODE = os.environ.get("PSP_RADAR_ACCESS_CODE", "").strip()
 OPEN_PATHS = frozenset({"/api/health", "/favicon.ico"})
 
 #: Schätzwerte für den Fortschrittsbalken, nach Modus
-ESTIMATED_SECONDS = {"voll": 110.0, "schnell": 25.0, "trichter": 60.0}
+ESTIMATED_SECONDS = {"voll": 110.0, "schnell": 25.0, "trichter": 60.0, "statisch": 6.0}
 
 
 @dataclass
@@ -92,20 +92,34 @@ class Job:
 
 class ScanRequest(BaseModel):
     url: str = Field(min_length=3)
-    mode: Literal["voll", "schnell", "trichter"] = "trichter"
+    mode: Literal["trichter", "voll", "schnell", "statisch"] = "trichter"
 
 
 class BatchRequest(BaseModel):
     urls: list[str] = Field(min_length=1, max_length=500)
-    mode: Literal["voll", "schnell", "trichter"] = "trichter"
+    mode: Literal["trichter", "voll", "schnell", "statisch"] = "trichter"
     concurrency: int = Field(default=6, ge=1, le=16)
 
 
 def _config_for(mode: str, concurrency: int = 6) -> ScanConfig:
     """Übersetzt den gewählten Modus in eine Konfiguration."""
     match mode:
+        case "statisch":
+            # Kein Browser. Wenige Sekunden, reicht überraschend oft:
+            # CSP-Header und die Zahlungsinformationsseite sind stark.
+            return ScanConfig(
+                enable_render=False,
+                enable_checkout=False,
+                total_timeout=45.0,
+                concurrency=concurrency,
+            )
         case "schnell":
-            return ScanConfig(enable_render=True, enable_checkout=False, total_timeout=90.0)
+            return ScanConfig(
+                enable_render=True,
+                enable_checkout=False,
+                total_timeout=90.0,
+                concurrency=concurrency,
+            )
         case "voll":
             return ScanConfig(auto_depth=False, total_timeout=280.0, concurrency=concurrency)
         case _:  # trichter
@@ -151,6 +165,11 @@ def build_app(db_path: Path | None = None) -> FastAPI:
         job.progress = BatchProgress(total=len(urls))
 
         def on_progress(progress: BatchProgress) -> None:
+            # Das Fortschrittsobjekt wird von run_batch selbst angelegt und
+            # hier übernommen. Ohne diese Zuweisung zeigte die Oberfläche
+            # dauerhaft "0 von N", während die Ergebnisse längst eintrafen —
+            # die API sah ein anderes Objekt als der Worker.
+            job.progress = progress
             job.stage = f"{progress.done} von {progress.total} — {progress.current}"
 
         try:
