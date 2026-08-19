@@ -1,0 +1,343 @@
+# Zahlungsabwickler / Acquirer (role: gateway)
+#
+# Gewichtungslogik:
+#   95-99  Beweiskraft. Live-Key im Quelltext oder Request an die Zahlungs-API.
+#   80-94  Sehr stark. PSP-eigenes SDK oder Checkout-Iframe geladen.
+#   60-79  Stark. CSP-Whitelist-Eintrag, PSP-spezifisches Cookie.
+#   30-59  Indiz. Assets, CDN-Hosts, DOM-Klassen.
+#   1-29   Schwaches Indiz. Sichtbarer Text, Logos. Nie allein entscheidend.
+#
+# Markt-Schwerpunkt dieser Datei: DACH.
+
+version: "2026.08.1"
+
+signatures:
+  # ------------------------------------------------------------------
+  # DACH-Anbieter zuerst — die werden von internationalen Tools regelmässig
+  # übersehen, obwohl sie im deutschsprachigen Mittelstand dominieren.
+  # ------------------------------------------------------------------
+
+  - id: unzer
+    name: Unzer
+    role: gateway
+    # Unzer ist durch Zukäufe gewachsen. Die alten Marken sind technisch
+    # weiterhin aktiv, tauchen im Checkout unter eigenen Hosts auf und
+    # werden von Shops auch so benannt — payolution etwa beim Rechnungskauf.
+    aliases: ["Heidelpay", "heidelpay", "Unzer Payments", "payolution", "Payolution"]
+    regions: ["DE", "AT", "CH"]
+    homepage: https://www.unzer.com
+    signals:
+      - { type: network_host, pattern: api.unzer.com, weight: 96, note: "Zahlungs-API" }
+      - { type: network_host, pattern: static.unzer.com, weight: 88, note: "Assets der Unzer-Bezahlmaske. Im Checkout von bergfreunde.de am 2026-08-15 bestätigt." }
+      - { type: network_host, pattern: payolution.com, weight: 94, note: "Rechnungs-/Ratenkauf, Unzer-Marke" }
+      - { type: network_host, pattern: paylater.unzer.com, weight: 95 }
+      - { type: csp_domain, pattern: "*.payolution.com", weight: 70 }
+      - { type: dom_text, pattern: 'Payolution', weight: 22, note: "Shops nennen den Dienstleister in der Zahlungsbeschreibung oft im Klartext" }
+      - { type: network_host, pattern: api.heidelpay.com, weight: 96, note: "Alte Marke, weiterhin aktiv" }
+      - { type: network_host, pattern: static.heidelpay.com, weight: 86 }
+      - { type: network_host, pattern: payment.unzer.com, weight: 92 }
+      - { type: html_regex, pattern: 's-pub-[0-9a-zA-Z\-]{20,}', weight: 97, note: "Öffentlicher Unzer-Key" }
+      - { type: script_src, pattern: unzer, weight: 80 }
+      - { type: csp_domain, pattern: "*.unzer.com", weight: 72 }
+      - { type: csp_domain, pattern: "*.heidelpay.com", weight: 70 }
+      - { type: html_regex, pattern: 'unzer(?:-|\.)(?:payments?|checkout|ui)', weight: 62 }
+
+  - id: computop
+    name: Computop
+    role: gateway
+    aliases: ["Computop Paygate"]
+    regions: ["DE", "AT"]
+    homepage: https://www.computop.com
+    signals:
+      - { type: network_host, pattern: pay1.computop-paygate.com, weight: 96 }
+      - { type: network_host, pattern: www.computop-paygate.com, weight: 94 }
+      - { type: network_url_regex, pattern: 'computop-paygate\.com/(?:payssl|paynow|ExternalServices)', weight: 97 }
+      - { type: csp_domain, pattern: "*.computop-paygate.com", weight: 74 }
+      - { type: iframe_src, pattern: computop, weight: 85 }
+      - { type: html_regex, pattern: 'computop[_-]?(?:paygate|merchant)', weight: 58 }
+
+  - id: payone
+    name: PAYONE
+    role: gateway
+    aliases: ["BS PAYONE", "Payone GmbH"]
+    regions: ["DE", "AT"]
+    homepage: https://www.payone.com
+    signals:
+      - { type: network_host, pattern: secure.pay1.de, weight: 96, note: "PAYONE Server-API" }
+      - { type: network_host, pattern: api.pay1.de, weight: 96 }
+      - { type: network_host, pattern: frontend.pay1.de, weight: 92 }
+      - { type: network_url_regex, pattern: 'pay1\.de/(?:frontend|client-api)', weight: 94 }
+      - { type: csp_domain, pattern: "*.pay1.de", weight: 74 }
+      - { type: csp_domain, pattern: "*.payone.com", weight: 66 }
+      - { type: iframe_src, pattern: pay1.de, weight: 88 }
+      - { type: html_regex, pattern: 'payone[_-]?(?:hosted|iframe|creditcard)', weight: 60 }
+
+  - id: novalnet
+    name: Novalnet
+    role: gateway
+    regions: ["DE", "AT", "CH"]
+    homepage: https://www.novalnet.de
+    signals:
+      - { type: network_host, pattern: payport.novalnet.de, weight: 96 }
+      - { type: network_host, pattern: cdn.novalnet.de, weight: 88 }
+      - { type: network_host, pattern: paygate.novalnet.de, weight: 94 }
+      - { type: csp_domain, pattern: "*.novalnet.de", weight: 72 }
+      - { type: script_src, pattern: novalnet, weight: 80 }
+
+  - id: secupay
+    name: secupay
+    role: gateway
+    regions: ["DE"]
+    homepage: https://www.secupay.com
+    signals:
+      - { type: network_host, pattern: api.secupay.com, weight: 95 }
+      - { type: network_host, pattern: api.secupay.ag, weight: 95 }
+      - { type: csp_domain, pattern: "*.secupay.com", weight: 70 }
+      - { type: script_src, pattern: secupay, weight: 78 }
+
+  - id: micropayment
+    name: micropayment
+    role: gateway
+    regions: ["DE"]
+    homepage: https://www.micropayment.de
+    signals:
+      - { type: network_host, pattern: api.micropayment.de, weight: 94 }
+      - { type: network_host, pattern: sandbox.micropayment.de, weight: 60, note: "Testumgebung — Shop evtl. nicht live" }
+      - { type: iframe_src, pattern: micropayment.de, weight: 86 }
+
+  - id: vr_payment
+    name: VR Payment
+    role: gateway
+    aliases: ["CardProcess"]
+    regions: ["DE"]
+    homepage: https://www.vr-payment.de
+    signals:
+      - { type: network_host, pattern: gateway.vr-payment.de, weight: 95 }
+      - { type: network_host, pattern: pay.vr-payment.de, weight: 93 }
+      - { type: csp_domain, pattern: "*.vr-payment.de", weight: 72 }
+
+  - id: datatrans
+    name: Datatrans
+    role: gateway
+    regions: ["CH"]
+    homepage: https://www.datatrans.ch
+    signals:
+      - { type: network_host, pattern: pay.datatrans.com, weight: 96 }
+      - { type: network_host, pattern: api.datatrans.com, weight: 96 }
+      - { type: network_host, pattern: pay.sandbox.datatrans.com, weight: 60 }
+      - { type: csp_domain, pattern: "*.datatrans.com", weight: 74 }
+      - { type: script_src, pattern: datatrans, weight: 82 }
+
+  - id: saferpay
+    name: Saferpay
+    role: gateway
+    aliases: ["Worldline Saferpay", "SIX Payment Services"]
+    regions: ["CH", "AT", "DE"]
+    homepage: https://www.saferpay.com
+    signals:
+      - { type: network_host, pattern: www.saferpay.com, weight: 94 }
+      - { type: network_url_regex, pattern: 'saferpay\.com/(?:vt2|api|Fields)', weight: 96 }
+      - { type: network_host, pattern: test.saferpay.com, weight: 55, note: "Testumgebung" }
+      - { type: csp_domain, pattern: "*.saferpay.com", weight: 74 }
+
+  - id: wallee
+    name: wallee
+    role: gateway
+    regions: ["CH", "DE", "AT"]
+    homepage: https://www.wallee.com
+    signals:
+      - { type: network_host, pattern: checkout.wallee.com, weight: 95 }
+      - { type: network_host, pattern: app-wallee.com, weight: 88 }
+      - { type: csp_domain, pattern: "*.wallee.com", weight: 72 }
+
+  - id: mpay24
+    name: mPAY24
+    role: gateway
+    regions: ["AT"]
+    homepage: https://www.mpay24.com
+    signals:
+      - { type: network_host, pattern: www.mpay24.com, weight: 94 }
+      - { type: network_url_regex, pattern: 'mpay24\.com/(?:app|okay)', weight: 95 }
+      - { type: csp_domain, pattern: "*.mpay24.com", weight: 72 }
+
+  # ------------------------------------------------------------------
+  # Internationale Gateways mit starker DACH-Präsenz
+  # ------------------------------------------------------------------
+
+  - id: stripe
+    name: Stripe
+    role: gateway
+    regions: ["GLOBAL"]
+    homepage: https://stripe.com
+    signals:
+      - { type: html_regex, pattern: 'pk_live_[0-9a-zA-Z]{24,}', weight: 99, note: "Live Publishable Key — beweiskräftig" }
+      - { type: network_host, pattern: api.stripe.com, weight: 96 }
+      - { type: network_host, pattern: checkout.stripe.com, weight: 96 }
+      - { type: network_host, pattern: js.stripe.com, weight: 88 }
+      - { type: network_host, pattern: m.stripe.network, weight: 84, note: "Fraud-Telemetrie von Stripe" }
+      - { type: network_host, pattern: m.stripe.com, weight: 82 }
+      - { type: csp_domain, pattern: "*.stripe.com", weight: 70 }
+      - { type: cookie, pattern: '^__stripe_(mid|sid)$', weight: 80 }
+      - { type: iframe_src, pattern: 'js\.stripe\.com/v3', weight: 86 }
+      - { type: js_global, pattern: Stripe, weight: 72 }
+      - { type: html_regex, pattern: 'pk_test_[0-9a-zA-Z]{24,}', weight: 45, note: "Testkey — Integration evtl. nicht live" }
+
+  - id: adyen
+    name: Adyen
+    role: gateway
+    regions: ["GLOBAL", "EU"]
+    homepage: https://www.adyen.com
+    signals:
+      - { type: network_host, pattern: checkoutshopper-live.adyen.com, weight: 97, note: "Live-Checkout — beweiskräftig" }
+      - { type: network_host, pattern: checkoutshopper-test.adyen.com, weight: 50, note: "Testumgebung" }
+      - { type: network_url_regex, pattern: 'adyen\.com/checkoutshopper/', weight: 94 }
+      - { type: network_host, pattern: live.adyen.com, weight: 95 }
+      - { type: network_url_regex, pattern: 'adyen\.com/hpp/', weight: 93, note: "Hosted Payment Pages" }
+      - { type: csp_domain, pattern: "*.adyen.com", weight: 76 }
+      - { type: script_src, pattern: 'adyen\.js|adyen\.web', weight: 84 }
+      - { type: html_regex, pattern: 'adyen-checkout__', weight: 78, note: "CSS-Klassen des Adyen Web Components" }
+      - { type: js_global, pattern: AdyenCheckout, weight: 86 }
+
+  - id: mollie
+    name: Mollie
+    role: gateway
+    regions: ["NL", "DE", "BE", "EU"]
+    homepage: https://www.mollie.com
+    signals:
+      - { type: network_host, pattern: api.mollie.com, weight: 96 }
+      - { type: network_host, pattern: js.mollie.com, weight: 88 }
+      - { type: network_url_regex, pattern: 'mollie\.com/checkout/', weight: 95 }
+      - { type: csp_domain, pattern: "*.mollie.com", weight: 72 }
+      - { type: js_global, pattern: Mollie, weight: 74 }
+      - { type: html_regex, pattern: 'mollie-components?', weight: 66 }
+
+  - id: braintree
+    name: Braintree
+    role: gateway
+    underlying: paypal
+    regions: ["GLOBAL"]
+    homepage: https://www.braintreepayments.com
+    signals:
+      - { type: network_host, pattern: api.braintreegateway.com, weight: 96 }
+      - { type: network_host, pattern: js.braintreegateway.com, weight: 88 }
+      - { type: network_host, pattern: assets.braintreegateway.com, weight: 84 }
+      - { type: network_host, pattern: client-analytics.braintreegateway.com, weight: 82 }
+      - { type: csp_domain, pattern: "*.braintreegateway.com", weight: 72 }
+      - { type: js_global, pattern: braintree, weight: 74 }
+
+  - id: checkout_com
+    name: Checkout.com
+    role: gateway
+    regions: ["GLOBAL", "EU"]
+    homepage: https://www.checkout.com
+    signals:
+      - { type: network_host, pattern: api.checkout.com, weight: 96 }
+      - { type: network_host, pattern: cdn.checkout.com, weight: 86 }
+      - { type: network_host, pattern: js.checkout.com, weight: 88 }
+      - { type: html_regex, pattern: 'pk_[a-z]{2,}_[0-9a-f\-]{30,}', weight: 88, note: "Checkout.com Public Key" }
+      - { type: csp_domain, pattern: "*.checkout.com", weight: 70 }
+      - { type: js_global, pattern: Frames, weight: 50, note: "Checkout.com Frames SDK — Name ist generisch" }
+
+  - id: worldline
+    name: Worldline
+    role: gateway
+    aliases: ["Ingenico", "Ogone", "Worldline Global Collect"]
+    regions: ["EU", "GLOBAL"]
+    homepage: https://worldline.com
+    signals:
+      - { type: network_host, pattern: secure.ogone.com, weight: 95 }
+      - { type: network_host, pattern: payment.direct.worldline-solutions.com, weight: 96 }
+      - { type: network_url_regex, pattern: 'worldline-solutions\.com/(?:v2|hostedcheckout)', weight: 94 }
+      - { type: network_host, pattern: payment.preprod.direct.worldline-solutions.com, weight: 50 }
+      - { type: csp_domain, pattern: "*.worldline-solutions.com", weight: 72 }
+      - { type: csp_domain, pattern: "*.ogone.com", weight: 70 }
+
+  - id: nexi
+    name: Nexi
+    role: gateway
+    aliases: ["Concardis", "Nets", "Nexi Group"]
+    regions: ["IT", "DE", "EU"]
+    homepage: https://www.nexigroup.com
+    signals:
+      - { type: network_host, pattern: xpay.nexigroup.com, weight: 96 }
+      - { type: network_host, pattern: ecommerce.nexi.it, weight: 95 }
+      - { type: network_host, pattern: pay.nexi.it, weight: 94 }
+      - { type: network_url_regex, pattern: 'nexi(?:group)?\.(?:it|com)/(?:ecomm|api)', weight: 92 }
+      - { type: csp_domain, pattern: "*.nexigroup.com", weight: 72 }
+
+  - id: mangopay
+    name: Mangopay
+    role: gateway
+    regions: ["EU", "FR"]
+    homepage: https://mangopay.com
+    signals:
+      - { type: network_host, pattern: api.mangopay.com, weight: 96 }
+      - { type: network_host, pattern: api.sandbox.mangopay.com, weight: 50 }
+      - { type: csp_domain, pattern: "*.mangopay.com", weight: 72 }
+
+  - id: sumup
+    name: SumUp
+    role: gateway
+    regions: ["DE", "EU"]
+    homepage: https://sumup.com
+    signals:
+      - { type: network_host, pattern: api.sumup.com, weight: 95 }
+      - { type: network_host, pattern: gateway.sumup.com, weight: 94 }
+      - { type: script_src, pattern: 'sumup\.com/gateway', weight: 86 }
+      - { type: csp_domain, pattern: "*.sumup.com", weight: 70 }
+
+  - id: mpgs
+    name: Mastercard Payment Gateway Services
+    role: gateway
+    aliases: ["MPGS"]
+    regions: ["GLOBAL"]
+    signals:
+      - { type: network_url_regex, pattern: 'gateway\.mastercard\.com/(?:api|checkout)', weight: 95 }
+      - { type: network_host, pattern: eu-gateway.mastercard.com, weight: 94 }
+      - { type: script_src, pattern: 'gateway\.mastercard\.com', weight: 86 }
+
+  - id: shopify_payments
+    name: Shopify Payments
+    role: gateway
+    underlying: stripe
+    requires_platform: shopify
+    supersedes: ["stripe"]
+    regions: ["GLOBAL"]
+    homepage: https://www.shopify.com/payments
+    signals:
+      - { type: network_url_regex, pattern: 'shopify\.com/[0-9]+/(?:checkouts|payments)', weight: 90 }
+      - { type: network_host, pattern: deposit.shopifycs.com, weight: 96, note: "Shopify Card Server — kaufmännisch Shopify Payments" }
+      - { type: network_host, pattern: checkout.shopify.com, weight: 88 }
+      - { type: iframe_src, pattern: shopifycs.com, weight: 94 }
+      - { type: html_regex, pattern: 'shopify_payments', weight: 70 }
+
+  # ------------------------------------------------------------------
+  # Orchestrierungsschichten — liegen über mehreren Gateways
+  # ------------------------------------------------------------------
+
+  - id: primer
+    name: Primer
+    role: orchestrator
+    regions: ["EU", "GLOBAL"]
+    signals:
+      - { type: network_host, pattern: api.primer.io, weight: 95 }
+      - { type: network_host, pattern: sdk.primer.io, weight: 90 }
+      - { type: csp_domain, pattern: "*.primer.io", weight: 72 }
+
+  - id: spreedly
+    name: Spreedly
+    role: orchestrator
+    regions: ["GLOBAL"]
+    signals:
+      - { type: network_host, pattern: core.spreedly.com, weight: 95 }
+      - { type: script_src, pattern: 'spreedly\.com', weight: 86 }
+
+  - id: payrexx
+    name: Payrexx
+    role: gateway
+    regions: ["CH"]
+    homepage: https://www.payrexx.com
+    signals:
+      - { type: network_url_regex, pattern: '[a-z0-9\-]+\.payrexx\.com', weight: 92 }
+      - { type: script_src, pattern: 'payrexx\.com/(?:js|modal)', weight: 88 }
+      - { type: csp_domain, pattern: "*.payrexx.com", weight: 70 }

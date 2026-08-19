@@ -1,0 +1,198 @@
+# Zahlungsarten, Wallets und BNPL (role: method / wallet)
+#
+# Wichtig: Diese Einträge sind KEINE Zahlungsdienstleister im Sinne der
+# Hauptfrage. Ein PayPal-Button sagt nichts darüber aus, wer die
+# Kartenzahlung abwickelt — das läuft häufig parallel über Stripe oder Adyen.
+# Die Trennung über `role` ist genau deshalb da.
+
+version: "2026.08.1"
+
+signatures:
+  - id: paypal
+    name: PayPal
+    role: wallet
+    regions: ["GLOBAL"]
+    homepage: https://www.paypal.com
+    signals:
+      - { type: network_url_regex, pattern: 'paypal\.com/sdk/js', weight: 88 }
+      - { type: network_host, pattern: www.paypal.com, weight: 72 }
+      - { type: network_host, pattern: www.paypalobjects.com, weight: 68 }
+      - { type: network_host, pattern: c.paypal.com, weight: 74, note: "PayPal Fraudnet" }
+      - { type: network_url_regex, pattern: 'paypal\.com/(?:v[12]|graphql)', weight: 86 }
+      - { type: csp_domain, pattern: "*.paypal.com", weight: 58 }
+      - { type: html_regex, pattern: 'paypal-button|paypal-checkout', weight: 55 }
+      - { type: js_global, pattern: paypal, weight: 62 }
+      - { type: dom_text, pattern: 'PayPal', weight: 12, note: "Reiner Text — nur stützend" }
+
+  - id: klarna
+    name: Klarna
+    role: method
+    regions: ["SE", "DE", "AT", "EU"]
+    homepage: https://www.klarna.com
+    signals:
+      - { type: network_host, pattern: api.klarna.com, weight: 92 }
+      - { type: network_host, pattern: js.klarna.com, weight: 86 }
+      - { type: network_host, pattern: x.klarnacdn.net, weight: 82 }
+      - { type: network_host, pattern: eu.klarnaevt.com, weight: 78 }
+      - { type: network_url_regex, pattern: 'klarna\.com/(?:eu|payments)/', weight: 88 }
+      - { type: csp_domain, pattern: "*.klarna.com", weight: 60 }
+      - { type: js_global, pattern: Klarna, weight: 70 }
+      - { type: html_regex, pattern: 'klarna-(?:payments|placement|osm)', weight: 62 }
+
+  - id: amazon_pay
+    name: Amazon Pay
+    role: wallet
+    regions: ["DE", "GLOBAL"]
+    homepage: https://pay.amazon.de
+    signals:
+      - { type: network_host, pattern: static-eu.payments-amazon.com, weight: 90 }
+      - { type: network_host, pattern: static-na.payments-amazon.com, weight: 90 }
+      - { type: network_url_regex, pattern: 'payments(?:-amazon)?\.amazon\.(?:de|com)/(?:checkout|OffAmazonPayments)', weight: 92 }
+      - { type: csp_domain, pattern: "*.payments-amazon.com", weight: 66 }
+      - { type: html_regex, pattern: 'amazon-?pay-?button|AmazonPayButton', weight: 64 }
+
+  - id: apple_pay
+    name: Apple Pay
+    role: wallet
+    regions: ["GLOBAL"]
+    signals:
+      - { type: wellknown, pattern: /.well-known/apple-developer-merchantid-domain-association, weight: 84, note: "Domain für Apple Pay verifiziert" }
+      - { type: network_host, pattern: apple-pay-gateway.apple.com, weight: 92 }
+      - { type: js_global, pattern: ApplePaySession, weight: 58, note: "Nur im Safari-Kontext verlässlich" }
+      - { type: html_regex, pattern: 'apple-pay-button|ApplePayButton', weight: 56 }
+
+  - id: google_pay
+    name: Google Pay
+    role: wallet
+    regions: ["GLOBAL"]
+    signals:
+      - { type: network_host, pattern: pay.google.com, weight: 88 }
+      - { type: network_url_regex, pattern: 'pay\.google\.com/gp/p/js/pay\.js', weight: 90 }
+      - { type: html_regex, pattern: 'google-?pay-?button|GooglePayButton', weight: 60 }
+
+  - id: ratepay
+    name: Ratepay
+    role: method
+    regions: ["DE", "AT", "CH"]
+    homepage: https://www.ratepay.com
+    signals:
+      - { type: network_host, pattern: d.ratepay.com, weight: 88, note: "Device-Fingerprinting für Rechnungskauf" }
+      - { type: network_host, pattern: api.ratepay.com, weight: 92 }
+      - { type: script_src, pattern: 'ratepay\.com', weight: 82 }
+      - { type: csp_domain, pattern: "*.ratepay.com", weight: 62 }
+
+  - id: billie
+    name: Billie
+    role: method
+    regions: ["DE"]
+    homepage: https://www.billie.io
+    signals:
+      - { type: network_host, pattern: paella.billie.io, weight: 92 }
+      - { type: network_host, pattern: api.billie.io, weight: 92 }
+      - { type: script_src, pattern: 'billie\.io', weight: 82 }
+
+  - id: easycredit
+    name: easyCredit Ratenkauf
+    role: method
+    regions: ["DE"]
+    homepage: https://www.easycredit-ratenkauf.de
+    signals:
+      - { type: network_host, pattern: ratenkauf.easycredit.de, weight: 92 }
+      - { type: network_host, pattern: partner.easycredit-ratenkauf.de, weight: 90 }
+      - { type: script_src, pattern: 'easycredit', weight: 78 }
+
+  - id: riverty
+    name: Riverty
+    role: method
+    aliases: ["AfterPay", "Arvato"]
+    regions: ["DE", "NL", "EU"]
+    homepage: https://www.riverty.com
+    signals:
+      - { type: network_host, pattern: api.riverty.io, weight: 92 }
+      - { type: network_host, pattern: api.afterpay.io, weight: 88 }
+      - { type: script_src, pattern: 'riverty|afterpay\.io', weight: 76 }
+
+  - id: ideal
+    name: iDEAL
+    role: method
+    regions: ["NL"]
+    signals:
+      - { type: network_url_regex, pattern: 'ideal\.nl|idealdesk\.com', weight: 82 }
+      - { type: dom_text, pattern: 'iDEAL', weight: 18 }
+
+  - id: sofort
+    name: Sofortüberweisung
+    role: method
+    aliases: ["Klarna Sofort", "SOFORT GmbH"]
+    regions: ["DE", "AT"]
+    signals:
+      - { type: network_host, pattern: www.sofort.com, weight: 86 }
+      - { type: network_url_regex, pattern: 'sofort\.com/payment/', weight: 90 }
+      - { type: dom_text, pattern: 'Sofort(?:überweisung| Banking)', weight: 20 }
+
+  - id: bancontact
+    name: Bancontact
+    role: method
+    regions: ["BE"]
+    signals:
+      - { type: network_url_regex, pattern: 'bancontact\.(?:com|net)', weight: 84 }
+      - { type: dom_text, pattern: 'Bancontact', weight: 18 }
+
+  - id: przelewy24
+    name: Przelewy24
+    role: method
+    regions: ["PL"]
+    signals:
+      - { type: network_host, pattern: secure.przelewy24.pl, weight: 92 }
+      - { type: dom_text, pattern: 'Przelewy24', weight: 18 }
+
+  - id: twint
+    name: TWINT
+    role: wallet
+    regions: ["CH"]
+    signals:
+      - { type: network_url_regex, pattern: 'twint\.ch|twint-services\.ch', weight: 88 }
+      - { type: html_regex, pattern: 'twint-?(?:button|pay)', weight: 62 }
+      - { type: dom_text, pattern: 'TWINT', weight: 20 }
+
+  - id: eps
+    name: EPS-Überweisung
+    role: method
+    regions: ["AT"]
+    signals:
+      - { type: network_url_regex, pattern: 'eps\.or\.at|eps-?ueberweisung', weight: 80 }
+      - { type: dom_text, pattern: 'EPS[- ](?:Überweisung|Transfer)', weight: 20 }
+
+  # ------------------------------------------------------------------
+  # Fraud-/Risk-Anbieter. Kein PSP, aber ein starker Hinweis auf ein
+  # professionelles Enterprise-Setup — und damit auf die Grössenklasse
+  # des Shops.
+  # ------------------------------------------------------------------
+
+  - id: riskified
+    name: Riskified
+    role: fraud
+    signals:
+      - { type: network_host, pattern: beacon.riskified.com, weight: 90 }
+      - { type: script_src, pattern: 'riskified\.com', weight: 84 }
+
+  - id: forter
+    name: Forter
+    role: fraud
+    signals:
+      - { type: network_url_regex, pattern: 'forter\.com|cdn[0-9]?\.forter\.com', weight: 88 }
+      - { type: cookie, pattern: '^forterToken$', weight: 86 }
+
+  - id: signifyd
+    name: Signifyd
+    role: fraud
+    signals:
+      - { type: network_host, pattern: cdn-scripts.signifyd.com, weight: 90 }
+      - { type: script_src, pattern: 'signifyd\.com', weight: 84 }
+
+  - id: threatmetrix
+    name: ThreatMetrix
+    role: fraud
+    aliases: ["LexisNexis ThreatMetrix"]
+    signals:
+      - { type: network_url_regex, pattern: 'online-metrix\.net', weight: 88 }

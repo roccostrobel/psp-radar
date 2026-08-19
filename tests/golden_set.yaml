@@ -1,0 +1,93 @@
+# Golden-Set — Shops mit verifiziertem Zahlungsdienstleister
+#
+# Die Referenz, an der die Erkennungsgüte gemessen wird. Ohne diese Datei
+# wäre jede Aussage über Trefferquote eine Behauptung.
+#
+# REGEL: Jeder Eintrag braucht `verified_via`. Ein Eintrag ohne Beleg ist
+# schlimmer als gar kein Eintrag — er kalibriert das Tool auf eine
+# Vermutung und verschiebt damit still alle Gewichte in die falsche Richtung.
+#
+# Belegarten, absteigend nach Aussagekraft:
+#   checkout_manual   Checkout selbst geöffnet, Netzwerk-Traffic in den
+#                     Browser-DevTools gesichtet. Stärkster Beleg.
+#   impressum         PSP im Impressum, in den AGB oder der
+#                     Datenschutzerklärung namentlich genannt
+#   csp_header        PSP-Domain in der Content-Security-Policy
+#   tool_observed     Aus dem Netzwerk-Mitschnitt des Tools abgeleitet.
+#                     SCHWÄCHSTER Beleg — hiermit misst das Golden-Set
+#                     teilweise nur, ob das Tool mit sich selbst
+#                     übereinstimmt. Nur als Zwischenstand zulässig, bis
+#                     eine unabhängige Quelle nachgetragen ist.
+#
+# `expected_psp` und `expected_platform` sind Signatur-IDs aus
+# src/psp_detector/signatures/*.yaml — nicht Anzeigenamen.
+
+version: "2026.08.1"
+
+shops:
+  # ------------------------------------------------------------------
+  # Verifiziert (Zwischenstand, unabhängige Bestätigung ausstehend)
+  # ------------------------------------------------------------------
+
+  - url: https://www.snocks.com
+    expected_psp: shopify_payments
+    expected_platform: shopify
+    verified_via: tool_observed
+    verified_at: "2026-08-14"
+    note: >-
+      Der Referenzfall des Projekts. Ohne Checkout-Simulation wurde Shopify
+      zu 100% erkannt, der PSP aber gar nicht. Mit Simulation: Shopify
+      Payments zu 98% über checkout.shopify.com im Checkout-Traffic.
+      Belegt die Kernthese, dass der PSP erst im Checkout sichtbar wird.
+      Unabhängige Bestätigung per DevTools steht noch aus.
+
+  - url: https://www.waterdrop.de
+    expected_psp: shopify_payments
+    expected_platform: shopify
+    verified_via: tool_observed
+    verified_at: "2026-08-14"
+    note: >-
+      Zweiter Shopify-Fall, gleiches Bild. Bestätigt zusätzlich die
+      Konfliktauflösung: gemeldet wird Shopify Payments mit Stripe als
+      `underlying`, nicht Stripe als eigenständiges Gateway.
+
+  - url: https://www.bergfreunde.de
+    expected_psp: unzer
+    expected_platform: oxid
+    verified_via: checkout_manual
+    verified_at: "2026-08-15"
+    note: >-
+      Der bisher am gründlichsten belegte Eintrag — zwei voneinander
+      unabhängige Quellen. Erstens nennt die Seite "Lieferung und Zahlung"
+      den Dienstleister im Klartext: Rechnungskauf über Payolution/Unzer,
+      Forderungsabtretung an die Bank Frick AG. Zweitens der Checkout
+      selbst, manuell bis zur Zahlungsauswahl durchlaufen: static.unzer.com
+      (4 Requests) und h.online-metrix.net (16 Requests, ThreatMetrix mit
+      session_id-Präfix "bergfreunde_").
+
+      Lehrreich war der Fall aus einem anderen Grund: Zuerst hatte ich
+      vermutet, dem Tool fehle eine Signatur. Falsch — beide Hosts stehen
+      längst in der Datenbank, jeweils mit Gewicht 88. Gescheitert war
+      allein der Warenkorb, weil OXID Grössenvarianten als Kachel-Links
+      rendert statt als select oder button. Daraus entstand adapters/oxid.py.
+
+      Angeboten werden ausserdem Kreditkarte (Visa, Mastercard, Amex),
+      PayPal und Apple Pay. Wer die Kartenzahlung abwickelt, liess sich
+      ohne Eingabe von Kartendaten nicht klären und bleibt offen.
+
+  # ------------------------------------------------------------------
+  # Ausbauziel für Meilenstein 4: mindestens 30 Einträge.
+  #
+  # Vielfalt schlägt Menge. Dreissig Shopify-Shops sagen weniger aus als
+  # zehn Shops über verschiedene Systeme hinweg. Angestrebte Abdeckung:
+  #
+  #   Shop-Systeme   Shopware, WooCommerce, JTL, OXID, plentymarkets,
+  #                  Gambio, Magento, Shopify
+  #   PSPs           nicht nur Stripe und Adyen, sondern gerade Unzer,
+  #                  Computop, PAYONE, Novalnet, Mollie
+  #   Grössen        vom Ein-Mann-Shop bis zum Konzern
+  #   Länder         DE, AT und CH — die Zahlungsarten unterscheiden sich
+  #                  deutlich, in der Schweiz etwa TWINT und Datatrans
+  #
+  # Ablauf pro Shop mit `/verify-shop <url>` in Claude Code.
+  # ------------------------------------------------------------------

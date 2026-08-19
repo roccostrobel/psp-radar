@@ -1,0 +1,74 @@
+[project]
+name = "psp-radar"
+version = "0.1.0"
+description = "Ermittelt aus Shop-URLs den Zahlungsdienstleister, die Zahlungsarten und das Shop-System — schnell, belegt und im Browser teilbar."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Rocco Strobel" }]
+keywords = ["payments", "psp", "ecommerce", "detection", "fintech"]
+
+dependencies = [
+    "httpx[http2]>=0.27",
+    "playwright>=1.48",
+    "pydantic>=2.9",
+    "typer>=0.12",
+    "rich>=13.9",
+    "pyyaml>=6.0",
+    "tldextract>=5.1",
+    # API ist Teil des Kernversprechens (Teilbarkeit) und deshalb keine Option
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "types-pyyaml>=6.0",
+]
+
+[project.scripts]
+psp-radar = "psp_radar.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/roccostrobel/psp-radar"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psp_radar"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+markers = [
+    "network: benötigt echtes Internet (in CI übersprungen)",
+    "slow: langsamer Test",
+]

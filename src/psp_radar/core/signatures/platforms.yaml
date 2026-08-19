@@ -1,0 +1,170 @@
+# Shop-Systeme (role: platform)
+#
+# Doppelter Nutzen: Das Shop-System ist erstens ein eigenständiges
+# Rechercheergebnis, zweitens steuert es die Checkout-Simulation. Ein
+# erkannter Shopify-Shop bekommt den Shopify-Adapter mit bekannten
+# Selektoren statt der generischen Heuristik — das hebt die Trefferquote
+# in Stufe 3 spürbar.
+#
+# Der DACH-Markt ist hier besonders eigen: Shopware, JTL, Oxid,
+# plentymarkets und Gambio spielen eine Rolle, die international kaum
+# jemand auf dem Schirm hat.
+
+version: "2026.08.1"
+
+signatures:
+  - id: shopify
+    name: Shopify
+    role: platform
+    regions: ["GLOBAL"]
+    signals:
+      - { type: wellknown, pattern: /products.json, weight: 88, note: "Shopify liefert hier immer JSON mit products-Key" }
+      - { type: network_host, pattern: cdn.shopify.com, weight: 92 }
+      - { type: header, pattern: 'x-shopid:.+', weight: 96 }
+      - { type: header, pattern: 'x-shopify-stage:.+', weight: 96 }
+      - { type: html_regex, pattern: 'Shopify\.shop\s*=', weight: 94 }
+      - { type: html_regex, pattern: 'cdn\.shopify\.com/s/files', weight: 82 }
+      - { type: cookie, pattern: '^_shopify_(y|s|sa_t)$', weight: 84 }
+      - { type: js_global, pattern: Shopify, weight: 86 }
+
+  - id: woocommerce
+    name: WooCommerce
+    role: platform
+    regions: ["GLOBAL"]
+    signals:
+      - { type: html_regex, pattern: '/wp-content/plugins/woocommerce/', weight: 94 }
+      - { type: html_regex, pattern: 'woocommerce-(?:page|js|no-js)', weight: 82 }
+      - { type: cookie, pattern: '^woocommerce_(cart_hash|items_in_cart)$', weight: 88 }
+      - { type: html_regex, pattern: 'wc-ajax=', weight: 80 }
+      - { type: wellknown, pattern: /wp-json/wc/store/v1/products, weight: 90 }
+      - { type: js_global, pattern: wc_add_to_cart_params, weight: 84 }
+
+  - id: shopware
+    name: Shopware
+    role: platform
+    regions: ["DE", "AT", "EU"]
+    signals:
+      - { type: header, pattern: 'sw-invalidation-states:.+', weight: 94 }
+      - { type: html_regex, pattern: 'shopware[/-]?(?:6|storefront)', weight: 82 }
+      - { type: html_regex, pattern: '/bundles/storefront/', weight: 90, note: "Shopware 6 Asset-Pfad" }
+      - { type: html_regex, pattern: 'data-cms-element-id|csrf/generate', weight: 70 }
+      - { type: cookie, pattern: '^(session-|sw-)', weight: 62 }
+      - { type: wellknown, pattern: /store-api/context, weight: 86 }
+      - { type: html_regex, pattern: '/themes/Frontend/|engine/Shopware', weight: 86, note: "Shopware 5" }
+
+  - id: magento
+    name: Magento / Adobe Commerce
+    role: platform
+    regions: ["GLOBAL"]
+    signals:
+      - { type: html_regex, pattern: '/static/(?:version[0-9]+/)?frontend/', weight: 88 }
+      - { type: html_regex, pattern: 'Magento_(?:Ui|Catalog|Checkout)', weight: 92 }
+      - { type: cookie, pattern: '^(mage-cache-storage|form_key|X-Magento-Vary)$', weight: 86 }
+      - { type: js_global, pattern: requirejs, weight: 30, note: "Sehr generisch" }
+      - { type: html_regex, pattern: 'mage/(?:cookies|translate)', weight: 80 }
+
+  - id: jtl_shop
+    name: JTL-Shop
+    role: platform
+    regions: ["DE", "AT"]
+    signals:
+      - { type: html_regex, pattern: 'JTL-?Shop|jtl-shop', weight: 90 }
+      - { type: html_regex, pattern: '/templates/(?:NOVA|Evo)/', weight: 88, note: "Standard-Templates von JTL" }
+      - { type: cookie, pattern: '^JTLSHOP$', weight: 94 }
+      - { type: html_regex, pattern: 'includes/libs/', weight: 40 }
+
+  - id: oxid
+    name: OXID eShop
+    role: platform
+    regions: ["DE", "AT", "CH"]
+    signals:
+      - { type: html_regex, pattern: 'oxid-?esales|OXID eShop', weight: 90 }
+      - { type: html_regex, pattern: '/out/(?:azure|flow|wave)/src/', weight: 90 }
+      - { type: cookie, pattern: '^(sid|oxid)', weight: 50 }
+      - { type: html_regex, pattern: 'cl=(?:start|details|basket)&', weight: 78 }
+
+  - id: plentymarkets
+    name: plentymarkets
+    role: platform
+    regions: ["DE"]
+    signals:
+      - { type: html_regex, pattern: 'plentymarkets|plentyShop', weight: 92 }
+      - { type: html_regex, pattern: '/layout/plentyShop', weight: 90 }
+      - { type: cookie, pattern: '^plenty', weight: 84 }
+
+  - id: gambio
+    name: Gambio
+    role: platform
+    regions: ["DE"]
+    signals:
+      - { type: html_regex, pattern: 'Gambio(?:Shop|GX)', weight: 90 }
+      - { type: html_regex, pattern: '/templates/Honeygrid/|GXModules', weight: 88 }
+
+  - id: prestashop
+    name: PrestaShop
+    role: platform
+    regions: ["FR", "EU"]
+    signals:
+      - { type: html_regex, pattern: 'prestashop', weight: 84 }
+      - { type: cookie, pattern: '^PrestaShop-', weight: 92 }
+      - { type: js_global, pattern: prestashop, weight: 86 }
+
+  - id: salesforce_commerce
+    name: Salesforce Commerce Cloud
+    role: platform
+    aliases: ["Demandware", "SFCC"]
+    regions: ["GLOBAL"]
+    signals:
+      - { type: html_regex, pattern: 'demandware\.(?:static|store)', weight: 94 }
+      - { type: network_url_regex, pattern: '/on/demandware\.store/', weight: 96 }
+      - { type: cookie, pattern: '^dwsid$', weight: 92 }
+
+  - id: sap_commerce
+    name: SAP Commerce Cloud
+    role: platform
+    aliases: ["Hybris"]
+    regions: ["GLOBAL"]
+    signals:
+      - { type: html_regex, pattern: 'hybris|/_ui/responsive/', weight: 86 }
+      - { type: cookie, pattern: '^(JSESSIONID|acceleratorSecureGUID)$', weight: 45 }
+
+  - id: bigcommerce
+    name: BigCommerce
+    role: platform
+    regions: ["GLOBAL"]
+    signals:
+      - { type: network_host, pattern: cdn11.bigcommerce.com, weight: 92 }
+      - { type: html_regex, pattern: 'bigcommerce\.com/s-', weight: 90 }
+
+  - id: wix
+    name: Wix Stores
+    role: platform
+    regions: ["GLOBAL"]
+    signals:
+      - { type: network_host, pattern: static.parastorage.com, weight: 90 }
+      - { type: html_regex, pattern: 'wix-?(?:stores|ecom)', weight: 86 }
+      - { type: header, pattern: 'x-wix-request-id:.+', weight: 94 }
+
+  - id: squarespace
+    name: Squarespace Commerce
+    role: platform
+    regions: ["GLOBAL"]
+    signals:
+      - { type: html_regex, pattern: 'squarespace\.com|static1\.squarespace', weight: 90 }
+      - { type: header, pattern: 'x-servedby:.+squarespace.+', weight: 92 }
+
+  - id: lightspeed
+    name: Lightspeed eCom
+    role: platform
+    regions: ["NL", "EU"]
+    signals:
+      - { type: network_host, pattern: cdn.webshopapp.com, weight: 92 }
+      - { type: html_regex, pattern: 'webshopapp\.com', weight: 84 }
+
+  - id: shopline
+    name: SHOPLINE
+    role: platform
+    regions: ["APAC"]
+    signals:
+      - { type: network_host, pattern: img.shoplineapp.com, weight: 90 }
+      - { type: html_regex, pattern: 'shoplineapp\.com', weight: 84 }

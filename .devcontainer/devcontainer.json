@@ -1,0 +1,40 @@
+{
+  "name": "psp-radar",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  // 8765 wird automatisch im Browser geoeffnet, sobald der Codespace steht.
+  // Kollegen muessen nichts eingeben und nichts starten.
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": {
+      "label": "psp-radar",
+      "onAutoForward": "openBrowser"
+    }
+  },
+
+  "postAttachCommand": "nohup .venv/bin/psp-radar serve --host 0.0.0.0 --port 8765 > /tmp/psp-radar.log 2>&1 &",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"],
+      "settings": {
+        "python.defaultInterpreterPath": ".venv/bin/python"
+      }
+    }
+  },
+
+  // Chromium braucht Luft. 2 Kerne und 8 GB kosten doppelte Kern-Stunden,
+  // laufen aber deutlich stabiler als die kleinste Variante.
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb"
+  },
+
+  "remoteUser": "vscode"
+}

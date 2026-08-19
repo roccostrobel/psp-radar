@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Projektdaten
+*.sqlite
+*.sqlite3
+*.db
+scans/
+out/
+*.har
+
+# Playwright
+playwright-report/
+test-results/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Lokale Konfiguration
+.env
+.env.local
+config.local.yaml
+.ui-screenshot.png
