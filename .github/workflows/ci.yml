@@ -73,3 +73,47 @@ jobs:
             sleep 2
           done
           echo "Keine Antwort"; docker logs radar; exit 1
+
+  devcontainer:
+    name: Codespace-Einrichtung wirklich pruefen
+    runs-on: ubuntu-latest
+    # EXAKT dasselbe Image wie .devcontainer/devcontainer.json und exakt
+    # dasselbe Setup-Skript. Ohne diesen Job war die Codespace-Einrichtung
+    # die einzige ungetestete Stelle im Projekt -- und genau dort sind
+    # zweimal hintereinander Fehler aufgetreten, die wie Erkennungsfehler
+    # aussahen: erst fehlendes Chromium, dann ein halb angelegtes venv.
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.48.0-noble
+      env:
+        PIP_BREAK_SYSTEM_PACKAGES: 1
+        PIP_DISABLE_PIP_VERSION_CHECK: 1
+        PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup-Skript ausfuehren
+        run: bash .devcontainer/setup.sh
+
+      - name: Selbsttest muss vollstaendig gruen sein
+        # Hier ohne "|| true": Im Container MUSS Chromium startbar sein.
+        run: psp-radar doctor
+
+      - name: Startskript ausfuehren
+        run: bash .devcontainer/start.sh
+
+      - name: Oberflaeche antwortet
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:8765/api/health > /dev/null; then
+              echo "Oberflaeche erreichbar"
+              curl -s http://127.0.0.1:8765/api/health
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Keine Antwort"; cat /tmp/psp-radar.log; exit 1
+
+      - name: Echter Scan im Container
+        # Beweist, dass die Browser-Stufen im Container laufen -- nicht nur
+        # dass der Server startet.
+        run: psp-radar scan https://www.bergfreunde.de --statisch -v

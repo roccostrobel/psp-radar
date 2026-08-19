@@ -1,18 +1,21 @@
 {
   "name": "psp-radar",
 
-  // Das offizielle Playwright-Image bringt Chromium und alle
-  // Systembibliotheken bereits mit. Vorher wurde ein normales Python-Image
-  // genutzt und Chromium per "playwright install --with-deps" nachgeladen --
-  // dieser Befehl ruft intern apt-get auf und braucht Root. Im Codespace
-  // laeuft der Benutzer "vscode" ohne Root, der Befehl scheiterte, und weil
-  // im Setup "set -e" gilt, brach das ganze Skript ab. Chromium fehlte
-  // danach, und die Browser-Stufen liefen in einen Startfehler.
-  //
-  // WICHTIG: Die Version hier muss zur gepinnten playwright-Version in
-  // pyproject.toml passen. Sonst sucht das Python-Paket einen anderen
-  // Chromium-Build als im Image liegt -- derselbe Fehler mit anderer Ursache.
+  // Offizielles Playwright-Image: Chromium und alle Systembibliotheken sind
+  // enthalten. Version muss zur gepinnten playwright-Version in
+  // pyproject.toml passen, sonst sucht das Python-Paket einen anderen
+  // Browser-Build als im Image liegt.
   "image": "mcr.microsoft.com/playwright/python:v1.48.0-noble",
+
+  "containerEnv": {
+    // Ubuntu 24.04 markiert das System-Python als "externally managed"
+    // (PEP 668). Ohne dieses Flag bricht jedes pip install ab.
+    "PIP_BREAK_SYSTEM_PACKAGES": "1",
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+    "PYTHONUNBUFFERED": "1",
+    // Chromium liegt im Image an dieser Stelle.
+    "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright"
+  },
 
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "postStartCommand": "bash .devcontainer/start.sh",
@@ -28,10 +31,12 @@
   "customizations": {
     "vscode": {
       "extensions": ["ms-python.python", "charliermarsh.ruff"],
-      "settings": { "python.defaultInterpreterPath": ".venv/bin/python" }
+      "settings": {
+        // Kein venv im Container -- der Container ist die Isolation.
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+      }
     }
   },
 
-  // Chromium braucht Luft. 2 Kerne und 8 GB laufen stabil.
   "hostRequirements": { "cpus": 2, "memory": "8gb" }
 }
