@@ -3,9 +3,17 @@
 # Gewichtungslogik:
 #   95-99  Beweiskraft. Live-Key im Quelltext oder Request an die Zahlungs-API.
 #   80-94  Sehr stark. PSP-eigenes SDK oder Checkout-Iframe geladen.
-#   60-79  Stark. CSP-Whitelist-Eintrag, PSP-spezifisches Cookie.
+#   60-79  Stark. CSP-Whitelist, PSP-Cookie, Anbietername auf der
+#          Zahlungsinformationsseite (payment_page_text).
 #   30-59  Indiz. Assets, CDN-Hosts, DOM-Klassen.
-#   1-29   Schwaches Indiz. Sichtbarer Text, Logos. Nie allein entscheidend.
+#   1-29   Schwaches Indiz. Sichtbarer Text irgendwo (dom_text), Logos.
+#          Nie allein entscheidend.
+#
+# Zum Unterschied zwischen dom_text und payment_page_text: Derselbe
+# Anbietername wiegt sehr unterschiedlich, je nachdem wo er steht. In einem
+# Blogartikel ist "Stripe" ein Zufall. Auf der Seite "Lieferung und Zahlung"
+# ist es eine Aussage des Händlers über seine eigene Abwicklung — im
+# DACH-Raum oft eine, zu der er verpflichtet ist. Deshalb 72 statt 22.
 #
 # Markt-Schwerpunkt dieser Datei: DACH.
 
@@ -32,7 +40,10 @@ signatures:
       - { type: network_host, pattern: payolution.com, weight: 94, note: "Rechnungs-/Ratenkauf, Unzer-Marke" }
       - { type: network_host, pattern: paylater.unzer.com, weight: 95 }
       - { type: csp_domain, pattern: "*.payolution.com", weight: 70 }
-      - { type: dom_text, pattern: 'Payolution', weight: 22, note: "Shops nennen den Dienstleister in der Zahlungsbeschreibung oft im Klartext" }
+      - { type: payment_page_text, pattern: '\bUnzer\b', weight: 74 }
+      - { type: payment_page_text, pattern: '\bPayolution\b', weight: 74, note: "Wortlaut bei bergfreunde.de: Der Zahlungsprozess wird über unseren Dienstleister Payolution/Unzer abgewickelt" }
+      - { type: payment_page_text, pattern: '\bheidelpay\b', weight: 70 }
+      - { type: dom_text, pattern: 'Payolution', weight: 22 }
       - { type: network_host, pattern: api.heidelpay.com, weight: 96, note: "Alte Marke, weiterhin aktiv" }
       - { type: network_host, pattern: static.heidelpay.com, weight: 86 }
       - { type: network_host, pattern: payment.unzer.com, weight: 92 }

@@ -95,6 +95,19 @@ def _iter_matches(signal: Signal, obs: Observation) -> Iterable[str]:
             if match:
                 yield match.group(0)[:120]
 
+        case SignalType.PAYMENT_PAGE_TEXT:
+            # Greift ausschliesslich auf Zahlungsinformationsseiten. Genau
+            # diese Einschränkung erlaubt das hohe Gewicht: Sonst würde ein
+            # Blogartikel über Stripe einen Stripe-Treffer erzeugen.
+            if not obs.is_payment_page:
+                return
+            match = _compiled(signal.pattern).search(obs.dom_text)
+            if match:
+                # Etwas Kontext mitgeben, damit im Report nachlesbar ist,
+                # in welchem Satz der Anbieter genannt wurde.
+                start = max(0, match.start() - 60)
+                yield obs.dom_text[start : match.end() + 60].strip()
+
         case SignalType.WELLKNOWN:
             for path in obs.wellknown_hits:
                 if path == signal.pattern:

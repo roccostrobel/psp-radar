@@ -92,12 +92,14 @@ class Job:
 
 class ScanRequest(BaseModel):
     url: str = Field(min_length=3)
-    mode: Literal["trichter", "voll", "schnell", "statisch"] = "trichter"
+    #: Standard ist die volle Tiefe. Zuverlässigkeit vor Tempo — der
+    #: Trichter bleibt verfügbar, ist aber eine bewusste Entscheidung.
+    mode: Literal["voll", "trichter", "schnell", "statisch"] = "voll"
 
 
 class BatchRequest(BaseModel):
     urls: list[str] = Field(min_length=1, max_length=500)
-    mode: Literal["trichter", "voll", "schnell", "statisch"] = "trichter"
+    mode: Literal["voll", "trichter", "schnell", "statisch"] = "voll"
     concurrency: int = Field(default=6, ge=1, le=16)
 
 

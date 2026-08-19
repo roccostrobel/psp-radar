@@ -23,22 +23,30 @@ class ScanConfig(BaseModel):
     # --- Tiefe ---
     enable_render: bool = True
     enable_checkout: bool = True
-    #: Trichterbetrieb: teurere Stufen nur, wenn das Ergebnis unklar bleibt
+
+    #: Trichterbetrieb — teurere Stufen überspringen, wenn das Ergebnis
+    #: bereits eindeutig scheint.
+    #:
+    #: **Standardmässig AUS.** Das ist eine bewusste Umkehr gegenüber dem
+    #: ersten Entwurf. Der Trichter ist verlockend, weil er Zeit spart, aber
+    #: er verlässt sich auf Schwellwerte, die noch nicht gegen ein
+    #: belastbares Golden-Set kalibriert sind. Solange das so ist, würde
+    #: jeder frühe Ausstieg auf Verdacht erfolgen — und ein schnelles
+    #: falsches Ergebnis ist schlechter als ein langsames richtiges.
+    #:
+    #: Wer ihn einschaltet, bekommt Tempo gegen ein kalkuliertes Risiko.
+    #: Wieder auf Standard zu stellen ist erst zu verantworten, wenn
+    #: `psp-radar eval --calibrate` belegt, was er an Recall kostet.
     auto_depth: bool = False
 
-    # --- Schwellwerte des Trichters ---
+    # --- Schwellwerte des Trichters (nur wirksam bei auto_depth) ---
     #
-    # WICHTIG: Diese beiden Zahlen sind der einzige Ort im Projekt, an dem
-    # Tempo gegen Genauigkeit getauscht wird. Sie dürfen nicht nach Gefühl
-    # gesetzt werden, sondern müssen gegen das Golden-Set kalibriert sein.
-    # `psp-radar eval --calibrate` rechnet aus, wie viel Recall ein
-    # gegebener Schwellwert kostet.
-    #
-    # Der Wert für den Rendering-Verzicht liegt bewusst hoch: Er greift
-    # praktisch nur, wenn ein Live-Key im Quelltext steht oder die CSP eine
-    # PSP-Domain whitelistet — beides sind Beweise, keine Indizien.
-    skip_render_threshold: int = 95
-    skip_checkout_threshold: int = 92
+    # Der einzige Ort im Projekt, an dem Tempo gegen Genauigkeit getauscht
+    # wird. Beide Werte liegen bewusst hoch: Sie greifen praktisch nur bei
+    # Beweisen — Live-Key im Quelltext, PSP-Domain in der CSP, Anbietername
+    # auf der Zahlungsinformationsseite —, nicht bei Indizien.
+    skip_render_threshold: int = 97
+    skip_checkout_threshold: int = 95
 
     # --- Zeitbudget (Sekunden) ---
     static_timeout: float = 20.0
@@ -79,10 +87,10 @@ class ScanConfig(BaseModel):
 
     # --- Batch ---
     concurrency: int = Field(default=4, ge=1, le=16)
-
-    def for_batch(self) -> ScanConfig:
-        """Etwas zurückhaltendere Variante für Massenläufe."""
-        return self.model_copy(update={"auto_depth": True, "delay_between_requests": 1.5})
+    #: Gleichzeitige HTTP-Abrufe **innerhalb eines Shops** in Stufe 1.
+    #: Klein gehalten: Es geht darum, 30 Pfade nicht sequenziell abzuklappern,
+    #: nicht darum, einen Shop mit Anfragen zu überziehen.
+    static_concurrency: int = Field(default=4, ge=1, le=8)
 
 
 #: Beschriftungen, die auf einen kaufauslösenden Button hindeuten. Elemente

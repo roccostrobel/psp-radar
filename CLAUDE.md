@@ -58,7 +58,23 @@ Wächter: `test_checkout_honesty.py`.
 
 Feld `tier`: `statisch`, `gerendert` oder `checkout`. Zwei Ergebnisse mit 96 % sind nicht gleichwertig, wenn eines aus einem CSP-Header und eines aus beobachtetem Checkout-Traffic stammt.
 
+### 7. Textgrenzen greifen am Text, nie am HTML
+
+`core/observation.py::strip_tags` entfernt zuerst Tags und begrenzt **danach**. Die umgekehrte Reihenfolge war ein schwerer Fehler: Bei bergfreunde.de hat die Zahlungsseite 873.504 Zeichen HTML, die ersten 200.000 davon fast nur Skripte. Nach dem Entstrippen blieben **103 Zeichen** — der Satz mit dem Anbieternamen lag weit dahinter. Das Tool meldete „kein Zahlungsdienstleister erkannt", während die Antwort im Quelltext stand.
+
+Text macht nur wenige Prozent des HTML aus. Eine HTML-Grenze verwirft deshalb fast den gesamten sichtbaren Inhalt, und zwar bei **jedem** grossen Shop. Wächter: `test_text_extraction.py`.
+
+### 8. `payment_page_text` ist der wichtigste Signaltyp im DACH-Raum
+
+Derselbe Anbietername wiegt sehr unterschiedlich, je nachdem wo er steht. In einem Blogartikel ist „Stripe" Zufall (`dom_text`, ≤ 25). Auf der Seite „Lieferung und Zahlung" ist es eine Aussage des Händlers über seine eigene Abwicklung — oft eine, zu der er verpflichtet ist (`payment_page_text`, ~72).
+
+Das Gewicht ist nur zu verantworten, weil `collect/static.py::looks_like_payment_page` **zwei** Bedingungen prüft: Pfad *und* Textmarken. Shops, die für unbekannte Pfade eine 200er-Startseite liefern, würden sonst als Zahlungsseite gelten.
+
+Belegter Nutzen: bergfreunde.de wird darüber zu 92 % als Unzer erkannt, in 12 Sekunden ohne Browser — obwohl die Checkout-Simulation dort weiterhin scheitert. Zwei unabhängige Wege zum Ergebnis sind der Kern von Zuverlässigkeit.
+
 ## Tempo: drei Kategorien, streng getrennt
+
+**Der Trichter ist standardmässig AUS.** Bewusste Umkehr gegenüber dem ersten Entwurf: Er verlässt sich auf Schwellwerte, die noch nicht gegen ein belastbares Golden-Set kalibriert sind. Jeder frühe Ausstieg wäre also auf Verdacht — und ein schnelles falsches Ergebnis ist schlechter als ein langsames richtiges. Standard ist volle Tiefe.
 
 | Kategorie | Beispiele | Bedingung |
 |---|---|---|

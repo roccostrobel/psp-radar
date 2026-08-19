@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from .models import REGEX_SIGNAL_TYPES, Role, SignalType, Signature
+from .models import REGEX_SIGNAL_TYPES, Role, Signal, SignalType, Signature
 
 SIGNATURE_DIR = Path(__file__).parent / "signatures"
 
@@ -36,18 +36,76 @@ class SignatureError(RuntimeError):
     """Die Signatur-Datenbank ist fehlerhaft."""
 
 
+def _merge_by_id(signatures: list[Signature]) -> list[Signature]:
+    """Führt Signaturen mit derselben ID zu einer zusammen.
+
+    Erlaubt es, einen Anbieter über mehrere Dateien zu beschreiben: die
+    technischen Fingerabdrücke in `gateways.yaml`, die Namenssignale für
+    Zahlungsinformationsseiten in `names.yaml`. Beides in eine Datei zu
+    zwingen würde entweder die Übersicht kosten oder dazu führen, dass die
+    Namenssignale ganz wegfallen.
+
+    Doppelte Signale — gleicher Typ, gleiches Muster — werden dabei
+    entfernt, und zwar mit dem höheren Gewicht. Ein versehentliches
+    Duplikat soll die Confidence nicht anheben.
+
+    Widersprüchliche Rollen sind ein Fehler und werden gemeldet: Wäre ein
+    Anbieter einmal `gateway` und einmal `method`, wäre unklar, in welche
+    Spalte sein Ergebnis gehört.
+    """
+    zusammen: dict[str, Signature] = {}
+    konflikte: list[str] = []
+
+    for sig in signatures:
+        vorhanden = zusammen.get(sig.id)
+        if vorhanden is None:
+            zusammen[sig.id] = sig
+            continue
+
+        if vorhanden.role != sig.role:
+            konflikte.append(
+                f"{sig.id}: Rolle einmal {vorhanden.role}, einmal {sig.role}"
+            )
+            continue
+
+        # Signale nach (Typ, Muster) entdoppeln, höheres Gewicht gewinnt
+        nach_schluessel: dict[tuple[str, str], Signal] = {
+            (str(s.type), s.pattern): s for s in vorhanden.signals
+        }
+        for signal in sig.signals:
+            schluessel = (str(signal.type), signal.pattern)
+            bisher = nach_schluessel.get(schluessel)
+            if bisher is None or signal.weight > bisher.weight:
+                nach_schluessel[schluessel] = signal
+
+        zusammen[sig.id] = vorhanden.model_copy(
+            update={
+                "signals": sorted(nach_schluessel.values(), key=lambda s: -s.weight),
+                "aliases": sorted(set(vorhanden.aliases) | set(sig.aliases)),
+                "regions": sorted(set(vorhanden.regions) | set(sig.regions)),
+                "supersedes": sorted(set(vorhanden.supersedes) | set(sig.supersedes)),
+                "underlying": vorhanden.underlying or sig.underlying,
+                "requires_platform": vorhanden.requires_platform or sig.requires_platform,
+                "homepage": vorhanden.homepage or sig.homepage,
+            }
+        )
+
+    if konflikte:
+        raise SignatureError(
+            "Widersprüchliche Rollen in der Signatur-Datenbank:\n  - "
+            + "\n  - ".join(konflikte)
+        )
+
+    return list(zusammen.values())
+
+
 class Registry:
     """Alle bekannten Signaturen, indiziert für schnellen Zugriff."""
 
     def __init__(self, signatures: list[Signature], version: str) -> None:
-        self.signatures = signatures
         self.version = version
-        self._by_id = {s.id: s for s in signatures}
-
-        duplicates = len(signatures) - len(self._by_id)
-        if duplicates:
-            raise SignatureError(f"{duplicates} doppelte Signatur-ID(s) in der Datenbank")
-
+        self.signatures = _merge_by_id(signatures)
+        self._by_id = {s.id: s for s in self.signatures}
         self._validate_references()
 
     def _validate_references(self) -> None:

@@ -28,24 +28,100 @@ WELLKNOWN_PATHS: tuple[tuple[str, str], ...] = (
     ("/.well-known/apple-developer-merchantid-domain-association.txt", "apple_pay"),
 )
 
-#: Zusätzlich besuchte Seiten. Impressum und AGB nennen den
-#: Zahlungsdienstleister im DACH-Raum erstaunlich oft im Klartext —
-#: die Informationspflicht spielt uns hier in die Hände.
-EXTRA_PAGES: tuple[str, ...] = (
-    "/impressum",
-    "/datenschutz",
-    "/agb",
-    "/zahlungsarten",
+#: Zahlungsinformationsseiten. Die ergiebigste billige Quelle im DACH-Raum:
+#: Händler benennen ihren Dienstleister dort im Klartext, oft weil sie es
+#: müssen. Bei bergfreunde.de steht auf `/lieferung-und-zahlung/` wörtlich
+#: "Der Zahlungsprozess wird über unseren Dienstleister Payolution/Unzer
+#: abgewickelt" — die Antwort auf die Kernfrage, für zwei Sekunden Aufwand.
+#:
+#: Die Liste ist bewusst lang. Jeder Eintrag kostet einen parallelen
+#: HTTP-Abruf; ein fehlender Eintrag kostet ein ganzes Ergebnis. Genau
+#: dieser Pfad fehlte und war der Grund, warum bergfreunde.de leer blieb.
+PAYMENT_PAGES: tuple[str, ...] = (
+    "/lieferung-und-zahlung",
+    "/lieferung-zahlung",
     "/versand-und-zahlung",
+    "/versand-zahlung",
+    "/zahlung-und-versand",
+    "/zahlungsarten",
+    "/zahlungsmethoden",
+    "/zahlungsmoeglichkeiten",
+    "/zahlung",
+    "/bezahlung",
+    "/bezahlmoeglichkeiten",
+    "/versandkosten",
+    "/lieferung",
+    "/hilfe/zahlung",
+    "/service/zahlungsarten",
+    "/service/lieferung-und-zahlung",
+    "/info/zahlungsarten",
+    "/payment",
+    "/payment-methods",
+    "/shipping-and-payment",
+)
+
+#: Rechtsseiten. Schwächer als die Zahlungsseiten, aber Impressum und AGB
+#: nennen den Abwickler oder die abtretungsempfangende Bank gelegentlich.
+LEGAL_PAGES: tuple[str, ...] = (
+    "/impressum",
+    "/agb",
+    "/datenschutz",
+    "/privacy-policy",
+    "/terms",
+)
+
+#: Seiten des Kaufprozesses. Manche Shops laden dort bereits PSP-Skripte,
+#: auch ohne gefüllten Warenkorb.
+FLOW_PAGES: tuple[str, ...] = (
     "/checkout",
     "/warenkorb",
     "/cart",
-    "/privacy-policy",
+    "/kasse",
+    "/checkout/cart",
 )
+
+EXTRA_PAGES: tuple[str, ...] = PAYMENT_PAGES + LEGAL_PAGES + FLOW_PAGES
 
 
 def _headers_lower(response: httpx.Response) -> dict[str, str]:
     return {k.lower(): v for k, v in response.headers.items()}
+
+
+#: Überschriften und Textmarken, die eine Seite als Zahlungsinformationsseite
+#: ausweisen. Zusätzlich zum Pfad geprüft, weil viele Shops solche Inhalte
+#: unter eigenwilligen URLs führen — und weil eine 200er-Fehlerseite unter
+#: `/zahlungsarten` sonst als Zahlungsseite gälte.
+PAYMENT_PAGE_MARKERS: tuple[str, ...] = (
+    "zahlungsart",
+    "zahlungsmethode",
+    "zahlungsmittel",
+    "zahlungsmöglichkeit",
+    "lieferung und zahlung",
+    "versand und zahlung",
+    "zahlung und versand",
+    "bezahlmöglichkeit",
+    "wie möchtest du bezahlen",
+    "payment method",
+)
+
+
+def looks_like_payment_page(url: str, text: str) -> bool:
+    """Ob eine Seite tatsächlich über Zahlungsarten informiert.
+
+    Zwei Bedingungen, absichtlich beide: Der Pfad muss danach aussehen
+    **und** der Text muss es bestätigen. Ein Shop, der für unbekannte Pfade
+    eine 200er-Startseite ausliefert, würde sonst fälschlich als
+    Zahlungsseite gelten — und dort ein zufällig erwähnter Anbietername
+    bekäme das hohe Gewicht, das nur echten Aussagen zusteht.
+    """
+    low_url = url.lower()
+    pfad_passt = any(
+        teil in low_url
+        for teil in ("zahl", "payment", "lieferung", "versand", "bezahl", "shipping")
+    )
+    low_text = text[:20000].lower()
+    text_passt = sum(marker in low_text for marker in PAYMENT_PAGE_MARKERS) >= 1
+    return pfad_passt and text_passt
 
 
 def _observation_from_response(
@@ -53,6 +129,7 @@ def _observation_from_response(
 ) -> Observation:
     html = response.text if "text" in response.headers.get("content-type", "") else ""
     scripts, iframes = extract_srcs(html)
+    text = strip_tags(html)
 
     obs = Observation(
         stage=stage,
@@ -62,7 +139,8 @@ def _observation_from_response(
         cookies={c.name: c.value for c in response.cookies.jar},
         script_srcs=scripts,
         iframe_srcs=iframes,
-        dom_text=strip_tags(html),
+        dom_text=text,
+        is_payment_page=looks_like_payment_page(str(response.url), text),
     )
     obs.merge_csp_from_headers()
     return obs
@@ -160,15 +238,37 @@ async def collect_static(
             observations[0].wellknown_hits = hits
 
         # Zusatzseiten, gedrosselt und robots-konform
-        for path in EXTRA_PAGES:
+        # Zusatzseiten parallel, aber gedrosselt. Vorher sequenziell mit
+        # Wartezeit dazwischen — bei jetzt 30 Pfaden wäre das über eine
+        # Minute nur für HTTP-Abrufe. Die Drosselung auf wenige gleichzeitige
+        # Verbindungen bleibt, weil ein Shop nicht mit 30 parallelen
+        # Anfragen überzogen werden soll.
+        semaphore = asyncio.Semaphore(config.static_concurrency)
+
+        async def hole(path: str) -> Observation | None:
             target = urljoin(normalized.final_url, path)
             if not normalized.may_fetch(target, config.user_agent, config.respect_robots):
-                continue
+                return None
+            async with semaphore:
+                response = await _fetch(client, target)
+            if response is None or response.status_code != 200 or len(response.text) < 500:
+                return None
+            return _observation_from_response(response)
 
-            response = await _fetch(client, target)
-            if response is not None and response.status_code == 200 and len(response.text) > 500:
-                observations.append(_observation_from_response(response))
+        weitere = await asyncio.gather(*(hole(p) for p in EXTRA_PAGES))
+        observations.extend(o for o in weitere if o is not None)
 
-            await asyncio.sleep(config.delay_between_requests * 0.3)
+    if not any(o.is_payment_page for o in observations):
+        warnings.append(
+            ScanWarning(
+                code="no_payment_page",
+                message=(
+                    "Keine Zahlungsinformationsseite gefunden. Im DACH-Raum nennen "
+                    "Shops den Dienstleister dort häufig im Klartext — fehlt die "
+                    "Seite, entfällt eine der verlässlichsten Quellen."
+                ),
+                stage=Stage.STATIC,
+            )
+        )
 
     return observations, warnings

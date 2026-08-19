@@ -416,10 +416,10 @@ INDEX_HTML = """<!doctype html>
     </form>
 
     <div class="modes">
-      <label><input type="radio" name="mode" value="trichter" checked>
-        Trichter <span class="dur">empfohlen</span></label>
-      <label><input type="radio" name="mode" value="voll">
-        Volle Tiefe <span class="dur">langsam</span></label>
+      <label><input type="radio" name="mode" value="voll" checked>
+        Volle Tiefe <span class="dur">empfohlen</span></label>
+      <label><input type="radio" name="mode" value="trichter">
+        Trichter <span class="dur">schneller, weniger tief</span></label>
       <label><input type="radio" name="mode" value="schnell">
         Ohne Checkout <span class="dur">schnell</span></label>
       <label><input type="radio" name="mode" value="statisch">
@@ -433,10 +433,11 @@ INDEX_HTML = """<!doctype html>
     </div>
 
     <p class="hint">
-      <strong>Trichter</strong> prüft erst billig ohne Browser und geht nur dann in den
-      Checkout, wenn das Ergebnis sonst unklar bliebe. Für Listen die richtige Wahl.
-      <strong>Volle Tiefe</strong> simuliert immer den Checkout — genauer bei Shops mit
-      mehreren Anbietern, aber deutlich langsamer.
+      <strong>Volle Tiefe</strong> ist der Standard und simuliert immer den Checkout —
+      dort zeigt sich der Zahlungsdienstleister am verlässlichsten.
+      <strong>Trichter</strong> überspringt teure Stufen, sobald das Ergebnis eindeutig
+      scheint. Das ist schneller, verlässt sich aber auf Schwellwerte, die noch nicht
+      gegen ein belastbares Golden-Set kalibriert sind — deshalb nicht der Standard.
     </p>
   </div>
 

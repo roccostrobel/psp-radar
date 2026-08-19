@@ -31,6 +31,30 @@ Gemessen auf einem MacBook, Intel, macOS 14.8, Chromium headless, Wohnanschluss.
 
 ---
 
+## Messung psp-radar, 2026-08-19 (MacBook, Intel, Wohnanschluss)
+
+Volle Tiefe ist ab jetzt der Standard; der Trichter ist abgeschaltet.
+
+| Shop | Modus | Dauer | Ergebnis | Vorgänger |
+|---|---|---|---|---|
+| bergfreunde.de | statisch | **11,9 s** | **Unzer 92 %** | 186 s, nichts gefunden |
+| bergfreunde.de | voll | 97,7 s | **Unzer 92 %** | 186 s, nichts gefunden |
+| snocks.com | voll | 118,5 s | Shopify Payments 98 % | 193 s, gleiches Ergebnis |
+
+### Was den Unterschied gemacht hat
+
+**Ein Fehler im Textauszug, der die Erkennung stumm machte.** `strip_tags` schnitt das HTML bei 200.000 Zeichen ab und entfernte erst danach die Tags. Bei bergfreunde.de blieben von 873.504 Zeichen HTML genau **103 Zeichen** Text übrig — die ersten 200 KB sind fast nur Skripte. Der Satz „Die Abwicklung des Zahlungsprozesses erfolgt dann über den Dienstleister Payolution/Unzer" lag weit dahinter und wurde nie ausgewertet.
+
+Nach der Korrektur: 15.130 Zeichen Text, Unzer sicher erkannt. Der Fehler betraf jeden grossen Shop.
+
+**Der neue Signaltyp `payment_page_text`.** Ein Anbietername auf der Zahlungsinformationsseite ist eine Aussage des Händlers, nicht eine Zufallserwähnung. Gewicht ~72 statt 22, aber nur auf Seiten, die Pfad *und* Textmarken bestätigen.
+
+**Eine fehlende Pfadvariante.** `/lieferung-und-zahlung` stand nicht in der Liste geprüfter Seiten — genau der Pfad, auf dem bei bergfreunde die Antwort steht. Jetzt 20 Varianten, parallel abgerufen.
+
+Bemerkenswert am bergfreunde-Fall: Die Checkout-Simulation scheitert dort weiterhin am Warenkorb. Das Ergebnis kommt trotzdem, über einen unabhängigen zweiten Weg. Genau das ist Zuverlässigkeit — nicht dass ein Weg immer funktioniert, sondern dass ein Ausfall nicht das ganze Ergebnis kostet.
+
+---
+
 ## Zielwerte für psp-radar
 
 | Kennzahl | Ausgangslage | Ziel | Kategorie |

@@ -13,6 +13,7 @@ gegen sie prüfen, ohne je wieder einen echten Shop anzufassen.
 from __future__ import annotations
 
 import re
+from html import unescape
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
@@ -46,6 +47,14 @@ class Observation(BaseModel):
     dom_text: str = ""
     #: Erfolgreich abgerufene bekannte Pfade
     wellknown_hits: list[str] = Field(default_factory=list)
+    #: Ist diese Seite eine Zahlungsinformationsseite?
+    #:
+    #: Entscheidet, ob `payment_page_text`-Signale greifen. Ein Anbietername
+    #: auf "Lieferung und Zahlung" ist eine Aussage des Händlers; derselbe
+    #: Name in einem Blogartikel ist Zufall. Ohne diese Unterscheidung
+    #: müssten Textsignale durchgehend niedrig gewichtet bleiben und wären
+    #: damit praktisch wertlos.
+    is_payment_page: bool = False
 
     def network_hosts(self) -> set[str]:
         """Alle Hostnamen aus beobachteten Requests, iframes und Skripten."""
@@ -98,9 +107,39 @@ def extract_srcs(html: str) -> tuple[list[str], list[str]]:
     return scripts, iframes
 
 
-def strip_tags(html: str, limit: int = 200_000) -> str:
-    """Grober Textauszug für DOM_TEXT-Signale."""
-    without_scripts = re.sub(
-        r"<(script|style)[^>]*>.*?</\1>", " ", html[:limit], flags=re.IGNORECASE | re.DOTALL
+def strip_tags(html: str, limit: int = 400_000) -> str:
+    """Sichtbaren Text aus HTML herausziehen.
+
+    **Die Begrenzung greift am Text, nicht am HTML.** Das ist der Kern der
+    Funktion und war zugleich ein schwerer Fehler in der ersten Fassung:
+    Dort wurde `html[:200_000]` abgeschnitten und *danach* entstrippt.
+
+    Warum das so falsch war: Bei bergfreunde.de hat die Seite "Lieferung und
+    Zahlung" 873.504 Zeichen HTML. Die ersten 200.000 davon sind fast
+    ausschliesslich Skripte, Stile und eingebettetes JSON — nach dem
+    Entfernen der Tags blieben **103 Zeichen** übrig. Der Satz "Die
+    Abwicklung des Zahlungsprozesses erfolgt über den Dienstleister
+    Payolution/Unzer" lag weit dahinter und wurde nie ausgewertet. Das Tool
+    meldete "kein Zahlungsdienstleister erkannt", während die Antwort im
+    Quelltext stand.
+
+    Der Fehler trifft jeden grossen Shop, nicht nur diesen einen — Text
+    macht typischerweise nur wenige Prozent des HTML aus, sodass eine
+    HTML-Grenze den sichtbaren Inhalt fast vollständig verwirft.
+    """
+    ohne_code = re.sub(
+        r"<(script|style|noscript|template|svg)\b[^>]*>.*?</\1>",
+        " ",
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
     )
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", without_scripts)).strip()
+    # Kommentare mit entfernen — dort stehen gelegentnlich ganze
+    # Konfigurationsblöcke, die den Text sonst verwässern.
+    ohne_code = re.sub(r"<!--.*?-->", " ", ohne_code, flags=re.DOTALL)
+
+    text = re.sub(r"<[^>]+>", " ", ohne_code)
+    # Entitäten auflösen, damit "Payolution&nbsp;/&nbsp;Unzer" lesbar wird
+    text = unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text[:limit]

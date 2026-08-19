@@ -1,0 +1,240 @@
+# Anbieternamen auf Zahlungsinformationsseiten
+#
+# Eigene Datei, weil dieser Signaltyp einer anderen Logik folgt als die
+# technischen Fingerabdrücke: Er liest, was der Händler über sich selbst
+# schreibt, statt zu beobachten, was sein Shop tut.
+#
+# Warum das im DACH-Raum so gut funktioniert: Händler müssen über
+# Zahlungsbedingungen informieren, und wer Rechnungskauf oder Ratenzahlung
+# über einen Dritten abwickelt, muss diesen benennen — schon wegen der
+# Forderungsabtretung. Bei bergfreunde.de steht wörtlich: "Mit Bestätigung
+# der Zahlungsart treten wir unseren Kaufpreisanspruch an die Bank Frick AG
+# ab. Die Abwicklung des Zahlungsprozesses erfolgt dann über den
+# Dienstleister Payolution/Unzer."
+#
+# Diese Signale ergänzen die technischen, sie ersetzen sie nicht. Ein
+# Anbietername allein erreicht 72 bis 76 — "wahrscheinlich", nicht "sicher".
+# Für Gewissheit braucht es weiterhin beobachteten Traffic.
+#
+# WICHTIG: `\b`-Wortgrenzen sind Pflicht. Ohne sie trifft "Nexi" in
+# "Nexit" und "Payone" in "Payoneer".
+
+version: "2026.08.2"
+
+signatures:
+  # ------------------------------------------------------------------
+  # Die Signaturen unten tragen bewusst dieselben IDs wie in
+  # gateways.yaml und methods.yaml. Die Registry führt Signale mit
+  # gleicher ID zusammen — dadurch bleiben die technischen Definitionen
+  # dort, wo sie hingehören, und die Namenssignale stehen gesammelt hier.
+  # ------------------------------------------------------------------
+
+  - id: computop
+    name: Computop
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bComputop\b', weight: 74 }
+      - { type: payment_page_text, pattern: 'Computop\s+Paygate', weight: 78 }
+
+  - id: payone
+    name: PAYONE
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bPAYONE\b', weight: 74 }
+      - { type: payment_page_text, pattern: '\bBS\s?PAYONE\b', weight: 78 }
+
+  - id: novalnet
+    name: Novalnet
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bNovalnet\b', weight: 76 }
+
+  - id: secupay
+    name: secupay
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bsecupay\b', weight: 76 }
+
+  - id: micropayment
+    name: micropayment
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bmicropayment\b', weight: 74 }
+
+  - id: vr_payment
+    name: VR Payment
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bVR\s?Payment\b', weight: 76 }
+      - { type: payment_page_text, pattern: '\bCardProcess\b', weight: 72 }
+
+  - id: datatrans
+    name: Datatrans
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bDatatrans\b', weight: 76 }
+
+  - id: saferpay
+    name: Saferpay
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bSaferpay\b', weight: 76 }
+      - { type: payment_page_text, pattern: 'SIX\s+Payment', weight: 72 }
+
+  - id: wallee
+    name: wallee
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bwallee\b', weight: 74 }
+
+  - id: mpay24
+    name: mPAY24
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bmPAY24\b', weight: 76 }
+
+  - id: payrexx
+    name: Payrexx
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bPayrexx\b', weight: 76 }
+
+  - id: stripe
+    name: Stripe
+    role: gateway
+    signals:
+      # Etwas niedriger als die DACH-Anbieter: "Stripe" taucht in
+      # Datenschutzerklärungen auch dann auf, wenn nur ein Newsletter- oder
+      # Spendenformular darüber läuft.
+      - { type: payment_page_text, pattern: '\bStripe\b', weight: 68 }
+
+  - id: adyen
+    name: Adyen
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bAdyen\b', weight: 74 }
+
+  - id: mollie
+    name: Mollie
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bMollie\b', weight: 74 }
+
+  - id: braintree
+    name: Braintree
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bBraintree\b', weight: 74 }
+
+  - id: checkout_com
+    name: Checkout.com
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bCheckout\.com\b', weight: 76 }
+
+  - id: worldline
+    name: Worldline
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bWorldline\b', weight: 74 }
+      - { type: payment_page_text, pattern: '\bIngenico\b', weight: 70 }
+      - { type: payment_page_text, pattern: '\bOgone\b', weight: 70 }
+
+  - id: nexi
+    name: Nexi
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bNexi\b', weight: 72 }
+      - { type: payment_page_text, pattern: '\bConcardis\b', weight: 74 }
+
+  - id: sumup
+    name: SumUp
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bSumUp\b', weight: 74 }
+
+  - id: mangopay
+    name: Mangopay
+    role: gateway
+    signals:
+      - { type: payment_page_text, pattern: '\bMangopay\b', weight: 76 }
+
+  # ------------------------------------------------------------------
+  # Zahlungsarten und Wallets. Auf einer Zahlungsseite aufgelistet zu
+  # sein ist hier sogar der Normalfall — deshalb reicht das für eine
+  # belastbare Aussage über das *Angebot*, ohne etwas über den Abwickler
+  # zu behaupten. Die Rollentrennung erledigt das.
+  # ------------------------------------------------------------------
+
+  - id: klarna
+    name: Klarna
+    role: method
+    signals:
+      - { type: payment_page_text, pattern: '\bKlarna\b', weight: 72 }
+
+  - id: paypal
+    name: PayPal
+    role: wallet
+    signals:
+      - { type: payment_page_text, pattern: '\bPayPal\b', weight: 72 }
+
+  - id: amazon_pay
+    name: Amazon Pay
+    role: wallet
+    signals:
+      - { type: payment_page_text, pattern: 'Amazon\s?Pay\b', weight: 74 }
+
+  - id: apple_pay
+    name: Apple Pay
+    role: wallet
+    signals:
+      - { type: payment_page_text, pattern: 'Apple\s?Pay\b', weight: 72 }
+
+  - id: google_pay
+    name: Google Pay
+    role: wallet
+    signals:
+      - { type: payment_page_text, pattern: 'Google\s?Pay\b', weight: 72 }
+
+  - id: ratepay
+    name: Ratepay
+    role: method
+    signals:
+      - { type: payment_page_text, pattern: '\bRatepay\b', weight: 76 }
+
+  - id: billie
+    name: Billie
+    role: method
+    signals:
+      - { type: payment_page_text, pattern: '\bBillie\b', weight: 72 }
+
+  - id: easycredit
+    name: easyCredit Ratenkauf
+    role: method
+    signals:
+      - { type: payment_page_text, pattern: '\beasyCredit\b', weight: 76 }
+
+  - id: riverty
+    name: Riverty
+    role: method
+    signals:
+      - { type: payment_page_text, pattern: '\bRiverty\b', weight: 76 }
+      - { type: payment_page_text, pattern: '\bAfterPay\b', weight: 70 }
+
+  - id: twint
+    name: TWINT
+    role: wallet
+    signals:
+      - { type: payment_page_text, pattern: '\bTWINT\b', weight: 76 }
+
+  - id: sofort
+    name: Sofortüberweisung
+    role: method
+    signals:
+      - { type: payment_page_text, pattern: 'Sofort(?:überweisung|\s?Banking)', weight: 72 }
+
+  - id: ideal
+    name: iDEAL
+    role: method
+    signals:
+      - { type: payment_page_text, pattern: '\biDEAL\b', weight: 72 }

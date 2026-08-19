@@ -52,6 +52,19 @@ class SignalType(StrEnum):
     HEADER = "header"
     #: Sichtbarer Text im DOM (schwaches Signal, nur zur Stützung)
     DOM_TEXT = "dom_text"
+    #: Anbietername auf einer **Zahlungsinformationsseite**.
+    #:
+    #: Der wichtigste Signaltyp für den DACH-Raum, und ein deutlich anderer
+    #: Fall als DOM_TEXT. Auf einer Seite "Lieferung und Zahlung" oder
+    #: "Zahlungsarten" ist ein genannter Anbieter keine Zufallserwähnung,
+    #: sondern eine Aussage des Händlers über seine eigene Abwicklung —
+    #: häufig sogar eine, zu der er rechtlich verpflichtet ist.
+    #:
+    #: Belegt an bergfreunde.de: "Der Zahlungsprozess wird über unseren
+    #: Dienstleister Payolution/Unzer abgewickelt." Diese Seite kostet zwei
+    #: Sekunden und beantwortet die Frage, für die sonst eine dreiminütige
+    #: Checkout-Simulation nötig wäre.
+    PAYMENT_PAGE_TEXT = "payment_page_text"
     #: Erreichbarer Pfad, z.B. /products.json
     WELLKNOWN = "wellknown"
     #: JS-Variable oder globales Objekt im gerenderten Kontext
@@ -70,6 +83,7 @@ REGEX_SIGNAL_TYPES: frozenset[SignalType] = frozenset(
         SignalType.COOKIE,
         SignalType.HEADER,
         SignalType.DOM_TEXT,
+        SignalType.PAYMENT_PAGE_TEXT,
     }
 )
 
