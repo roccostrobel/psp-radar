@@ -234,10 +234,12 @@ async def scan(
     # die wird auch beim Scheitern angelegt. Dieser Fehler kostete im
     # Vorgängerprojekt einen halben Tag Fehlersuche in der falschen Ecke.
     checkout_reached = bool(outcome and outcome.reached_checkout_page)
+    payment_reached = bool(outcome and outcome.reached_payment)
 
     return _finish(
         registry, evidence, url, normalized, checkout_reached, stages_run, warnings, started, tier,
         observations=observations,
+        payment_reached=payment_reached,
     )
 
 
@@ -292,6 +294,7 @@ def _finish(
     tier: str,
     *,
     observations: list[Observation] | None = None,
+    payment_reached: bool = False,
 ) -> ScanResult:
     """Letzter Abgleich und Fusion."""
     from .core import match_all
@@ -313,6 +316,7 @@ def _finish(
         duration_s=time.monotonic() - started,
     )
     result.tier = tier
+    result.payment_selection_reached = payment_reached
     return result
 
 

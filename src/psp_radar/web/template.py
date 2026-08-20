@@ -119,6 +119,18 @@ background:var(--navy-06);color:var(--navy-45)}}
 .tags{{display:flex;flex-wrap:wrap;gap:8px}}
 .tag{{padding:5px 14px;border-radius:var(--pill);background:var(--canvas);font-size:14px}}
 
+/* Belegart des Abwicklers. Steht bewusst gleichwertig neben der Prozentzahl:
+   Zwei Ergebnisse mit 92 % sind nicht dasselbe, wenn eines im Checkout
+   beobachtet wurde und eines aus einem Verbindungshinweis stammt. */
+.quelle{{display:inline-block;padding:3px 12px;border-radius:var(--pill);font-size:12.5px;
+font-weight:700;white-space:nowrap;letter-spacing:.01em}}
+.q-beobachtet{{background:var(--navy);color:#fff}}
+.q-angegeben{{background:rgba(27,106,215,.12);color:var(--blue)}}
+.q-vermutet{{background:rgba(134,137,154,.18);color:#5d6072}}
+.q-keine{{background:var(--navy-06);color:var(--raspberry)}}
+.block{{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+color:var(--navy-45);margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
+
 details{{margin-top:12px}}
 summary{{cursor:pointer;font-size:14px;font-weight:600;color:var(--raspberry);list-style:none}}
 summary::-webkit-details-marker{{display:none}}
@@ -210,12 +222,56 @@ function evidenceTable(items) {
     <tbody>${rows}</tbody></table></details>`;
 }
 
+/* Bezeichnung der Belegart. Absteigend nach Belastbarkeit. */
+const QUELLE = {
+  beobachtet: "im Checkout beobachtet",
+  angegeben:  "vom Händler angegeben",
+  vermutet:   "nur indirekte Spuren",
+  keine:      "nicht ermittelt"
+};
+
+/* Zwei Karten statt einer, in dieser Reihenfolge:
+
+   1. Was das Tool belegen kann — Shop-System und Zahlungsarten. Über acht
+      geprüfte Shops war das Shop-System 8 von 8 richtig.
+   2. Die offene Frage — wer wickelt die Kartenzahlung ab. Ohne Checkout ist
+      das bei etwa einem Viertel der DACH-Shops bestimmbar (docs/BEFUNDE.md).
+
+   Vorher stand der Abwickler als grosse Überschrift oben und alles andere
+   darunter. Das liess jeden Scan ohne Abwickler wie einen Fehlschlag
+   aussehen, obwohl er zwei brauchbare Auskünfte geliefert hat. */
 function karteEinzel(r) {
   const gw = (r.psps || []).filter(d => d.role === "gateway" || d.role === "orchestrator");
   const main = gw.length ? gw.reduce((a, b) => b.confidence > a.confidence ? b : a) : null;
   const methoden = [...(r.wallets || []), ...(r.payment_methods || [])];
+  const quelle = r.acquirer_source || (main ? "vermutet" : "keine");
 
   let h = `<div class="card"><div class="result-domain">${esc(r.final_domain || r.url)}</div>`;
+  h += `<div class="block">Belegt</div>`;
+
+  if (r.platform) {
+    h += `<div class="headline-row"><div class="answer">${esc(r.platform.name)}</div>${pill(r.platform)}
+          <span class="tier">Shop-System</span></div>`;
+    h += evidenceTable(r.platform.evidence);
+  } else {
+    h += `<div class="headline-row"><div class="answer none">Shop-System unbekannt</div></div>`;
+  }
+
+  h += `<div class="row"><div class="k">Zahlungsarten</div><div class="v">`;
+  h += methoden.length
+    ? `<div class="tags">${methoden.map(d => `<span class="tag">${esc(d.name)}</span>`).join("")}</div>`
+    : `<span style="color:var(--navy-45)">keine erkannt</span>`;
+  h += `</div></div>`;
+
+  if ((r.fraud_tools || []).length) {
+    h += `<div class="row"><div class="k">Fraud / Risk</div><div class="v"><div class="tags">${
+      r.fraud_tools.map(d => `<span class="tag">${esc(d.name)}</span>`).join("")}</div></div></div>`;
+  }
+  h += `</div>`;
+
+  /* --- Karte 2: der Abwickler --- */
+  h += `<div class="card"><div class="block">Zahlungsabwickler
+        <span class="quelle q-${esc(quelle)}">${esc(QUELLE[quelle] || quelle)}</span></div>`;
 
   if (main) {
     h += `<div class="headline-row"><div class="answer">${esc(main.name)}</div>${pill(main)}
@@ -224,35 +280,28 @@ function karteEinzel(r) {
       h += `<div class="under">Technischer Unterbau: ${esc(main.underlying_name || main.underlying)}
             — abgerechnet wird aber über ${esc(main.name)}.</div>`;
     }
-    h += evidenceTable(main.evidence);
     const rest = gw.filter(d => d.id !== main.id);
     if (rest.length) {
       h += `<div class="under">Ebenfalls erkannt: ${rest.map(d => esc(d.name)+" ("+d.confidence+"%)").join(", ")}</div>`;
     }
+    h += evidenceTable(main.evidence);
   } else {
-    h += `<div class="answer none">Kein Zahlungsdienstleister ermittelt</div>
-          <div class="under">${r.checkout_reached
-            ? "Der Checkout wurde erreicht, aber kein bekannter Anbieter erkannt — vermutlich fehlt eine Signatur."
-            : "Der Checkout wurde nicht erreicht. Ohne ihn bleibt der Zahlungsdienstleister meist unsichtbar."}</div>`;
+    h += `<div class="headline-row"><div class="answer none">nicht ermittelt</div></div>`;
   }
 
-  h += `<div class="row"><div class="k">Shop-System</div><div class="v">`;
-  h += r.platform ? `${esc(r.platform.name)} ${pill(r.platform)}` + evidenceTable(r.platform.evidence)
-                  : `<span style="color:var(--navy-45)">unbekannt</span>`;
-  h += `</div></div>`;
+  if (r.acquirer_note) h += `<div class="under">${esc(r.acquirer_note)}</div>`;
 
-  if (methoden.length) {
-    h += `<div class="row"><div class="k">Zahlungsarten</div><div class="v"><div class="tags">${
-      methoden.map(d => `<span class="tag">${esc(d.name)}</span>`).join("")}</div></div></div>`;
-  }
-  if ((r.fraud_tools || []).length) {
-    h += `<div class="row"><div class="k">Fraud / Risk</div><div class="v"><div class="tags">${
-      r.fraud_tools.map(d => `<span class="tag">${esc(d.name)}</span>`).join("")}</div></div></div>`;
-  }
+  /* Drei Stufen, nicht zwei: Checkout-Seite und Zahlungsauswahl fallen
+     auseinander. Bei snocks.com wurde die Seite erreicht und Shopify
+     Payments zu 98 % erkannt, die Zahlungsauswahl selbst aber nicht. */
+  const fortschritt = r.payment_selection_reached
+    ? `<span class="ok">Zahlungsauswahl erreicht</span>`
+    : r.checkout_reached
+      ? `<span class="ok">Checkout-Seite erreicht</span><span style="color:var(--navy-45)">, Zahlungsauswahl nicht</span>`
+      : `<span class="attention">ohne Checkout</span>`;
 
-  h += `<div class="row"><div class="k">Checkout</div><div class="v">${
-    r.checkout_reached ? `<span class="ok">erreicht</span>` : `<span class="attention">nicht erreicht</span>`
-  } <span style="color:var(--navy-45)">· ${r.duration_s} s · Stufe ${esc(r.tier)} · Signaturen ${esc(r.signature_version || "")}</span></div></div></div>`;
+  h += `<div class="row"><div class="k">Herkunft</div><div class="v">${fortschritt}
+    <span style="color:var(--navy-45)">· Stufe ${esc(r.tier)} · ${r.duration_s} s · Signaturen ${esc(r.signature_version || "")}</span></div></div></div>`;
 
   if ((r.warnings || []).length) {
     h += `<div class="card">` + r.warnings.map(w =>
@@ -266,11 +315,12 @@ function tabelleListe(daten) {
   const rows = (daten.results || []).map(r => {
     const gw = (r.psps || []).filter(d => d.role === "gateway" || d.role === "orchestrator");
     const main = gw.length ? gw.reduce((a, b) => b.confidence > a.confidence ? b : a) : null;
+    const quelle = r.acquirer_source || (main ? "vermutet" : "keine");
     return `<tr>
       <td class="mono">${esc(r.final_domain || r.url)}</td>
-      <td>${main ? esc(main.name) + " " + pill(main) : '<span class="attention">nicht ermittelt</span>'}</td>
       <td>${r.platform ? esc(r.platform.name) : "—"}</td>
-      <td><span class="tier">${esc(r.tier)}</span></td>
+      <td>${main ? esc(main.name) + " " + pill(main) : '<span class="attention">nicht ermittelt</span>'}</td>
+      <td><span class="quelle q-${esc(quelle)}">${esc(QUELLE[quelle] || quelle)}</span></td>
       <td class="num">${r.duration_s} s</td></tr>`;
   }).join("");
 
@@ -280,8 +330,8 @@ function tabelleListe(daten) {
   return `<div class="card">
     <div class="headline-row"><div class="answer">${daten.done} von ${daten.total} Shops</div></div>
     <div class="under">${stufen || "&nbsp;"}</div>
-    <table><thead><tr><th>Shop</th><th>Zahlungsdienstleister</th><th>Shop-System</th>
-      <th>Stufe</th><th>Dauer</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th>Shop</th><th>Shop-System</th><th>Zahlungsabwickler</th>
+      <th>Beleg</th><th>Dauer</th></tr></thead><tbody>${rows}</tbody></table>
     <div style="margin-top:18px">
       <button class="ghost" onclick="location.href='/api/job/${esc(daten.id)}/csv'">Als CSV herunterladen</button>
     </div></div>`;
@@ -395,10 +445,13 @@ INDEX_HTML = """<!doctype html>
 </header>
 
 <div class="wrap">
-  <h1>Wer wickelt die Zahlung ab?</h1>
+  <h1>Shop-System, Zahlungsarten, Abwickler</h1>
   <p class="lede">
-    Shop-URL oder ganze Liste eingeben und erfahren, welcher Zahlungsdienstleister
-    dahintersteht — dazu Zahlungsarten, Shop-System und zu jedem Fund ein Beleg.
+    Shop-URL oder ganze Liste eingeben. <strong>Shop-System und Zahlungsarten</strong>
+    kommen verlässlich, zu jedem Fund mit Beleg. Der <strong>Abwickler</strong> ist die
+    schwierige Frage — er lädt bei vielen Shops erst nach der Zahlungsauswahl, also
+    hinter der Grenze, die dieses Werkzeug nicht überschreitet. Jedes Ergebnis zeigt
+    deshalb an, woher es stammt.
   </p>
 
   <div class="card">

@@ -1,6 +1,8 @@
 # psp-radar — Projektkontext
 
-Ermittelt aus Shop-URLs den Zahlungsdienstleister, die Zahlungsarten und das Shop-System. Schwerpunkt DACH. Nachfolger von `psp-detector`, das als Referenz unangetastet liegen bleibt.
+Liest aus Shop-URLs Shop-System und Zahlungsarten — und, wo möglich, den Zahlungsabwickler. Schwerpunkt DACH. Nachfolger von `psp-detector`, das als Referenz unangetastet liegen bleibt.
+
+**Die Reihenfolge im Satz oben ist die Produktaussage, nicht Zufall.** Shop-System und Zahlungsarten sind belegbar (8 von 8 geprüften Shops korrekt). Der Abwickler ist ohne Checkout-Beobachtung nur bei etwa einem Viertel der DACH-Shops bestimmbar — gemessen, siehe `docs/BEFUNDE.md`. Wer die Reihenfolge umdreht, verkauft ein Ergebnis, das das Werkzeug in drei von vier Fällen nicht liefern kann.
 
 Zwei Anforderungen unterscheiden dieses Projekt vom Vorgänger:
 
@@ -42,11 +44,29 @@ web/       Oberfläche im Unzer-Design
 
 ## Unverhandelbare Regeln
 
-### 1. Es wird nie eine Bestellung ausgelöst
+### 1. Es wird nie eine Bestellung ausgelöst und nie ein Zahlungsdatum eingegeben
 
-`collect/adapters/base.py::safe_click` prüft vor **jedem** Klick den Beschriftungstext gegen `FORBIDDEN_SUBMIT_PATTERNS`. Ohne ermittelbaren Text wird nicht geklickt.
+Vier Schranken, alle in `collect/adapters/base.py`, jede mit Wächter in `tests/test_safety.py` — dem wichtigsten Testfile im Projekt:
 
-Die Muster nutzen, dass § 312j Abs. 3 BGB für deutsche Kaufbuttons eine eindeutige Beschriftung vorschreibt — praktisch jeder enthält „pflichtig". Diese Liste darf **nur erweitert, nie gekürzt** werden. `tests/test_safety.py` ist der wichtigste Testfile im Projekt. Er deckte im Vorgänger eine echte Lücke auf: „Kostenpflichtig bestellen" wäre geklickt worden.
+| Schranke | Prüft | Sperrliste |
+|---|---|---|
+| `safe_click` | Beschriftung vor jedem Klick. **Ohne ermittelbare Beschriftung kein Klick** | `FORBIDDEN_SUBMIT_PATTERNS`, `FORBIDDEN_STANDALONE_LABELS` |
+| `safe_fill` | Feldattribute vor jedem Eintrag | `FORBIDDEN_FIELD_PATTERNS` |
+| `safe_goto` | Ziel vor jeder Navigation | `FORBIDDEN_URL_PATTERNS` |
+| `test_kein_ungeschuetzter_klick_im_beschaffungscode` | per AST: kein `.click()` ausserhalb `safe_click`, kein `.fill()` ausserhalb `safe_fill` | — |
+
+**Die vierte ist die wichtigste.** Die ersten drei schützen vor den Klicks, an die jemand gedacht hat; die vierte vor denen, an die niemand gedacht hat. Sie fand bei ihrer Einführung drei echte Umgehungen: `base.py` (Varianten-Kacheln), `shopware.py` (Gastbestellung), `render.py` (Consent-Dialog). Alle drei in der Praxis harmlos, alle drei mit breiten Selektoren wie `fieldset label:not([class*='disabled'])` — was so ein Selektor auf einem unbekannten Shop trifft, weiss man vorher nicht.
+
+Zwei Lücken, die genau diese Tests aufgedeckt haben und die als Muster gelten:
+
+- **Leere Beschriftung galt als harmlos.** `safe_click` fügte Text, `value`, `aria-label` und `title` zu einer Zeichenkette zusammen. Waren alle leer, war sie leer, und eine leere Zeichenkette löst keine Sperre aus. Die Dokumentation behauptete das Gegenteil.
+- **Dieselbe Beschriftung in zwei Attributen.** Text „Bestellen" plus `aria-label="Bestellen"` ergab zusammengesetzt „Bestellen Bestellen" — steht in keiner Sperrliste. Deshalb wird jedes Stück auch einzeln geprüft.
+
+Beide Fälle haben dieselbe Form: Die Dokumentation beschrieb einen Schutz, den der Code nicht hatte. Wer hier etwas ändert, prüft das Verhalten, nicht den Quelltext — der alte Test las per `inspect.getsource`, ob ein Funktionsname vorkommt, und hätte auch ein Kommentar erfüllt.
+
+Die Muster nutzen, dass § 312j Abs. 3 BGB für deutsche Kaufbuttons eine eindeutige Beschriftung vorschreibt — praktisch jeder enthält „pflichtig". Diese Listen dürfen **nur erweitert, nie gekürzt** werden.
+
+`FORBIDDEN_STANDALONE_LABELS` wird per **Vollvergleich** geprüft, nicht auf Vorkommen: „Als Gast bestellen" muss geklickt werden, ein blosses „Bestellen" nicht. Dass damit auch ein harmloses „Bestätigen" blockiert wird, ist beabsichtigt und kostet bei manchen Shops ein Signal.
 
 ### 2. Nie auf eine Dauer warten, immer auf eine Bedingung
 
@@ -68,9 +88,18 @@ Noisy-OR mit Dämpfung in `core/scoring.py`. Addition würde aus fünf schwachen
 
 Wächter: `test_checkout_honesty.py`.
 
-### 6. Jedes Ergebnis trägt seine Trichterstufe
+### 6. Jedes Ergebnis trägt seine Trichterstufe und seine Belegart
 
-Feld `tier`: `statisch`, `gerendert` oder `checkout`. Zwei Ergebnisse mit 96 % sind nicht gleichwertig, wenn eines aus einem CSP-Header und eines aus beobachtetem Checkout-Traffic stammt.
+Zwei Felder, zwei verschiedene Aussagen:
+
+- **`tier`** — `statisch`, `gerendert` oder `checkout`. Wie tief gescannt wurde.
+- **`acquirer_source`** — `beobachtet`, `angegeben`, `vermutet` oder `keine`. Woher die Aussage über den Abwickler stammt. Dazu `acquirer_note` mit einem Satz Begründung.
+
+Beides sind `computed_field`, nicht `@property` — sonst fehlen sie im JSON und die Oberfläche kann sie nicht anzeigen. Dieser Fehler ist in diesem Projekt schon einmal passiert (`confidence_label`).
+
+Zwei Ergebnisse mit 92 % sind nicht gleichwertig, wenn eines ein beobachteter Request an die Zahlungs-API ist und eines ein Satz auf der Seite „Lieferung und Zahlung". `angegeben` ist belastbar, aber es ist eine Aussage des Händlers, keine Messung.
+
+Bei `keine` unterscheidet `acquirer_note` **warum**: leerer Warenkorb → Selektoren des Adapters; erreichter Checkout ohne Treffer → fehlende Signatur. Wer das verwechselt, erweitert die Signaturdatenbank, während der Adapter kaputt ist — genau der Fehler des Vorgängers. Wächter: `test_ergebnis_darstellung.py`.
 
 ### 7. Textgrenzen greifen am Text, nie am HTML
 

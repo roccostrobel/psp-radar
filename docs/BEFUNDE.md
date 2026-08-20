@@ -81,4 +81,53 @@ Als **Acquirer-Erkennung** — die ursprüngliche Kernfrage — funktioniert es 
 
 **Recall auf die Kernfrage: geschätzt 30 bis 40 Prozent.** Diese Zahl ist nicht sauber gemessen, weil das Golden-Set dafür zu klein ist — aber sie ist deutlich näher an der Wirklichkeit als jede Zahl, die vorher in diesem Projekt genannt wurde.
 
-Vor jeder weiteren Funktion gehört Weg 1 geprüft: Reicht der CSP-Header des Checkouts aus, um den Acquirer zu bestimmen? Wenn ja, ist das Tool schnell, sicher und zuverlässig zugleich. Wenn nein, ist die Kernfrage mit vertretbarem Aufwand nicht allgemein beantwortbar, und das gehört offen gesagt statt umgangen.
+---
+
+## Was daraus gemacht wurde, 20.08.2026
+
+Entschieden wurde Weg 3 als Sofortmassnahme und Weg 2 als Projekt. Weg 1 (öffentliche Quellen) bleibt offen.
+
+### Der Anspruch ist angepasst, nicht die Zahlen
+
+Das Werkzeug führt jetzt **Shop-System und Zahlungsarten** als Hauptergebnis und den Abwickler als zweite, ausdrücklich schwierigere Frage. In Oberfläche, Terminal und CSV.
+
+Neu ist, dass jedes Ergebnis seine **Belegart** trägt (`acquirer_source`), nicht nur eine Prozentzahl:
+
+| Belegart | Bedeutung | Beispiel |
+|---|---|---|
+| `beobachtet` | im Checkout beim Laden gesehen | snocks.com → Shopify Payments 98 % |
+| `angegeben` | der Händler nennt ihn auf seiner Zahlungsseite | bergfreunde.de → Unzer 92 %, 8 s ohne Browser |
+| `vermutet` | nur Hosts, Assets, Verbindungshinweise | — |
+| `keine` | nichts gefunden, mit Begründung | — |
+
+Der Grund für die Trennung: Alle drei können 92 % ergeben, und sie sind trotzdem nicht dasselbe. `angegeben` ist belastbar — der Händler sagt es über sich selbst, oft weil er dazu verpflichtet ist —, aber es ist keine Messung des Datenverkehrs.
+
+Bei `keine` benennt `acquirer_note` **warum**, und das ist der Teil mit dem grössten praktischen Wert: leerer Warenkorb → Selektoren des Adapters; erreichter Checkout ohne Treffer → fehlende Signatur. Wer das verwechselt, erweitert die Signaturdatenbank, während der Adapter kaputt ist. Genau das hat der Vorgänger getan.
+
+### Zusätzlich: die Anzeige unterscheidet jetzt drei Stufen
+
+`checkout_reached` und `payment_selection_reached` sind getrennt. Vorher meldete der Bericht „Checkout erreicht ✓" direkt neben der Warnung „Zahlungsauswahl nicht erreicht" — beides richtig, zusammen widersprüchlich. Bei snocks.com fällt genau das auseinander.
+
+### Vier Sicherheitsschranken statt einer
+
+Vor den Änderungen am Checkout wurden die Sperren gehärtet. Dabei kamen drei Löcher zum Vorschein, alle mit derselben Form: **Die Dokumentation beschrieb einen Schutz, den der Code nicht hatte.**
+
+1. **Klick ohne Beschriftung.** `safe_click` fügte Text, `value`, `aria-label` und `title` zu einer Zeichenkette zusammen und prüfte diese. Waren alle vier leer, war sie leer — und eine leere Zeichenkette löst keine Sperre aus. Ein Kaufbutton, der nur ein Icon zeigt, wäre geklickt worden. CLAUDE.md behauptete seit dem ersten Tag das Gegenteil.
+2. **Dieselbe Beschriftung zweimal.** Text „Bestellen" plus `aria-label="Bestellen"` ergab „Bestellen Bestellen". Steht in keiner Sperrliste.
+3. **Drei Klicks an `safe_click` vorbei** — `base.py`, `shopware.py`, `render.py`. In der Praxis harmlos, aber alle drei mit breiten Selektoren wie `fieldset label:not([class*='disabled'])`.
+
+Der neue Wächter dagegen ist eine AST-Prüfung: kein `.click()` ausserhalb von `safe_click`, kein `.fill()` ausserhalb von `safe_fill`, auch nicht in eingebettetem JavaScript. Sie ist die einzige der vier Schranken, die auch das abdeckt, woran niemand gedacht hat.
+
+Dazu neu: `safe_fill` (keine Karten-, IBAN-, CVC- oder Passwortfelder, auch nicht mit Testdaten) und `safe_goto` (keine Bestellabschluss-Pfade, auch nicht per GET). `FORBIDDEN_SUBMIT_PATTERNS` um 16 Muster erweitert, jedes eine gefundene Lücke — „Kauf abschliessen" enthält kein „kaufen", „Jetzt zahlen" war nicht abgedeckt, „Bestellung bestätigen" auch nicht.
+
+### Was das an Erkennung gebracht hat
+
+Nebeneffekt der Härtung, nicht ihr Ziel: Die fest verdrahteten Wartezeiten in Checkout und Rendering sind durch Bedingungen ersetzt (Regel 2, im Checkout bis dahin nicht umgesetzt). snocks.com lief in **108 s statt 116,7 s** und erreichte die Checkout-Seite zuverlässig. Der Verdacht, dass die Flackerhaftigkeit unter Last an den festen Wartezeiten lag, ist damit gestützt, aber nicht bewiesen — dafür braucht es mehrere Läufe.
+
+Ausserdem prüft `add_to_cart` jetzt, ob der Warenkorb tatsächlich gewachsen ist, und `checkout.py` wertet den Rückgabewert von `go_to_cart` aus statt ihn zu verwerfen. Neue Warnung `checkout_cart_empty`, die klar auf die Selektoren zeigt.
+
+### Was offen bleibt
+
+- **Weg 2 im Ernst:** bergfreunde.de bekommt sein Produkt weiterhin nicht in den Warenkorb. Die Kachel-Selektoren sind erweitert und warten jetzt auf die Freigabe des Buttons statt auf eine Sekundenzahl, geprüft ist das aber noch nicht.
+- **Golden-Set:** unverändert dünn. Ohne belastbare Messung bleibt der Recall eine Schätzung, und der Trichter bleibt aus gutem Grund abgeschaltet.
+- **Weg 1:** öffentliche Quellen als Golden-Set-Grundlage, gekennzeichnet als nicht-technischer Beleg.

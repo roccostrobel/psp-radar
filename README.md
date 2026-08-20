@@ -1,6 +1,17 @@
 # psp-radar
 
-Ermittelt aus Shop-URLs, **welcher Zahlungsdienstleister dahintersteckt** — dazu Zahlungsarten, Shop-System und zu jedem Fund ein Beleg.
+Liest aus einer Shop-URL **Shop-System und Zahlungsarten** — verlässlich und mit Beleg zu jedem Fund. Dazu, wo es möglich ist, den **Zahlungsabwickler**.
+
+Diese Reihenfolge ist keine Bescheidenheit, sondern Messergebnis. Über acht geprüfte Shops war das Shop-System 8 von 8 korrekt; der Abwickler ist ohne Checkout-Simulation nur bei etwa **einem Viertel** der DACH-Shops bestimmbar. Er lädt bei vielen Shops erst nach der Zahlungsauswahl — hinter der Grenze, die dieses Werkzeug nicht überschreitet. Zahlen und Methodik in [`docs/BEFUNDE.md`](docs/BEFUNDE.md).
+
+Deshalb trägt jedes Ergebnis seine Belegart:
+
+| Belegart | Bedeutung |
+|---|---|
+| **im Checkout beobachtet** | Der Anbieter wurde beim Laden gesehen. Der stärkste Beleg |
+| **vom Händler angegeben** | Er nennt ihn selbst auf seiner Zahlungsseite. Eine Aussage, keine Messung |
+| **nur indirekte Spuren** | Hosts, Assets, Verbindungshinweise. Offen, wer die Karte abwickelt |
+| **nicht ermittelt** | Mit Begründung, was gefehlt hat |
 
 Nachfolger von [`psp-detector`](https://github.com/roccostrobel/psp-detector) mit zwei neuen Schwerpunkten: **teilbar ohne Installation** und **schnell genug für Listen**.
 
@@ -143,12 +154,27 @@ Dazu `unbekannt` mit Begründung statt geratenem Treffer, und eine Deckelung der
 
 ---
 
+## Vier Sicherheitsschranken
+
+Das Werkzeug klickt sich durch fremde Checkouts. **Es löst nie eine Bestellung aus und gibt nie Zahlungsdaten ein.** Ziel ist die Seite mit der Zahlungsauswahl, dort ist Schluss. Durchgesetzt an vier Stellen, jede mit eigenem Test in `tests/test_safety.py`:
+
+| Schranke | Was sie verhindert |
+|---|---|
+| `safe_click` | Klick auf einen Kaufbutton. Ohne ermittelbare Beschriftung wird gar nicht geklickt |
+| `safe_fill` | Eintrag in Karten-, IBAN-, CVC- oder Passwortfelder — auch keine Testdaten |
+| `safe_goto` | Navigation auf Bestellabschluss-Pfade wie `/checkout/finish`, auch per GET |
+| AST-Prüfung | Dass irgendwo im Code an `safe_click` vorbei geklickt wird |
+
+Die vierte ist die wichtigste: Die ersten drei schützen vor den Klicks, an die jemand gedacht hat. Sie fand bei ihrer Einführung drei echte Umgehungen — in `adapters/base.py`, `shopware.py` und `render.py`.
+
+Der deutsche Rechtsrahmen hilft dabei: § 312j Abs. 3 BGB verlangt für Kaufbuttons eine eindeutige Beschriftung, weshalb praktisch jeder deutsche Kaufbutton „pflichtig" enthält. Ein einzelnes Muster deckt die ganze Familie ab. Die Sperrliste darf **nur erweitert, nie gekürzt** werden.
+
 ## Fairness gegenüber den Shops
 
 - Rate-Limit **pro Domain**, nicht global. Vierzig Shops parallel sind unproblematisch; vierzig Zugriffe auf einen Shop nicht
 - `robots.txt` wird gelesen und respektiert
 - Identifizierbarer User-Agent
-- **Niemals** eine Bestellung abschliessen, niemals Zahlungsdaten eingeben, niemals Konten anlegen — harter Stopp bei der Zahlungsauswahl
+- Ein Artikel im Warenkorb, Gast-Checkout mit erkennbar synthetischen Daten, keine Konten
 - Keine Speicherung personenbezogener Daten, keine Umgehung von Zugangsbeschränkungen
 
 ---

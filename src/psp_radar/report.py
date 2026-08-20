@@ -42,38 +42,81 @@ def _fmt(detection: Detection) -> str:
     return text
 
 
+#: Wie die Herkunft eines Acquirer-Funds dargestellt wird.
+#: Die Reihenfolge der Ausgabe folgt der Belastbarkeit, nicht der Zahl.
+_QUELLE = {
+    "beobachtet": ("bold green", "im Checkout beobachtet"),
+    "angegeben": ("green", "vom Händler angegeben"),
+    "vermutet": ("yellow", "nur indirekte Spuren"),
+    "keine": ("red", "nicht ermittelt"),
+}
+
+
+def fortschritt(result: ScanResult) -> str:
+    """Wie weit die Simulation gekommen ist — in drei Stufen, nicht in zwei.
+
+    Beides fällt auseinander: Bei snocks.com wurde die Checkout-Seite
+    erreicht und Shopify Payments zu 98 % erkannt, die Zahlungsauswahl
+    selbst aber nicht. Ein blosses "Checkout erreicht ✓" neben der Warnung
+    "Zahlungsauswahl nicht erreicht" widerspricht sich für den Leser.
+    """
+    if result.payment_selection_reached:
+        return "[green]Zahlungsauswahl erreicht ✓[/]"
+    if result.checkout_reached:
+        return "[yellow]Checkout-Seite erreicht, Zahlungsauswahl nicht[/]"
+    return "[yellow]ohne Checkout[/]"
+
+
 def print_result(result: ScanResult, console: Console | None = None, *, verbose: bool = False) -> None:
-    """Menschenlesbare Ausgabe im Terminal."""
+    """Menschenlesbare Ausgabe im Terminal.
+
+    Die Reihenfolge ist bewusst gewählt: erst das, was das Tool belegen
+    kann, dann die offene Frage. Umgekehrt gelesen entsteht der Eindruck,
+    ein Scan ohne Acquirer sei ein Fehlschlag — dabei sind Shop-System und
+    Zahlungsarten für sich schon eine brauchbare Auskunft, und der Acquirer
+    ist ohne Checkout nur bei etwa einem Viertel der DACH-Shops überhaupt
+    bestimmbar (docs/BEFUNDE.md).
+    """
     console = console or Console()
     tree = Tree(f"[bold]{result.final_domain or result.url}[/]")
 
+    # --- Belegt: Shop-System und Zahlungsarten ---
+    belegt = tree.add("[bold]Belegt[/]")
+
     if result.platform:
-        tree.add(f"Shop-System   [cyan]{result.platform.name}[/]  {_fmt(result.platform)}")
+        belegt.add(f"Shop-System    [cyan]{result.platform.name}[/]  {_fmt(result.platform)}")
     else:
-        tree.add("Shop-System   [dim]unbekannt[/]")
+        belegt.add("Shop-System    [dim]unbekannt[/]")
+
+    if result.wallets or result.payment_methods:
+        names = [d.name for d in (*result.wallets, *result.payment_methods)]
+        belegt.add(f"Zahlungsarten  [green]{', '.join(names)}[/]")
+    else:
+        belegt.add("Zahlungsarten  [dim]keine erkannt[/]")
+
+    if result.fraud_tools:
+        belegt.add(f"Fraud/Risk     [dim]{', '.join(d.name for d in result.fraud_tools)}[/]")
+
+    # --- Die offene Frage: wer wickelt ab? ---
+    stil, bezeichnung = _QUELLE[result.acquirer_source]
+    kopf = f"[bold]Zahlungsabwickler[/]  [{stil}]{bezeichnung}[/]"
+    zweig = tree.add(kopf)
 
     if result.psps:
-        branch = tree.add("Zahlungs-PSP")
         for detection in result.psps:
             role_hint = " [dim](Orchestrator)[/]" if detection.role == Role.ORCHESTRATOR else ""
-            node = branch.add(f"[bold cyan]{detection.name}[/]{role_hint}  {_fmt(detection)}")
+            node = zweig.add(f"[bold cyan]{detection.name}[/]{role_hint}  {_fmt(detection)}")
             for item in detection.evidence[: 6 if verbose else 3]:
                 node.add(
                     f"[dim]{item.matched_value}[/]  "
                     f"[dim italic]({item.signal_type}, Stufe {item.stage}, Gewicht {item.weight})[/]"
                 )
-    else:
-        tree.add("Zahlungs-PSP  [red]nicht ermittelt[/]")
+    zweig.add(f"[dim italic]{result.acquirer_note}[/]")
 
-    if result.wallets or result.payment_methods:
-        names = [d.name for d in (*result.wallets, *result.payment_methods)]
-        tree.add(f"Zahlungsarten  [green]{', '.join(names)}[/]")
-
-    if result.fraud_tools:
-        tree.add(f"Fraud/Risk     [dim]{', '.join(d.name for d in result.fraud_tools)}[/]")
-
-    checkout = "[green]erreicht ✓[/]" if result.checkout_reached else "[yellow]nicht erreicht[/]"
-    tree.add(f"Checkout       {checkout}   [dim]{result.duration_s:.1f}s[/]")
+    # --- Herkunft des Ergebnisses ---
+    tree.add(
+        f"[dim]Herkunft[/]       Stufe {result.tier} · {fortschritt(result)} · {result.duration_s:.1f}s"
+    )
 
     console.print(tree)
 
@@ -126,12 +169,18 @@ CSV_COLUMNS = (
     "platform_confidence",
     "psp",
     "psp_confidence",
+    #: Woher die Aussage stammt: beobachtet / angegeben / vermutet / keine.
+    #: Gehört neben die Zahl, nicht in eine Fussnote — zwei Zeilen mit 92 %
+    #: sind nicht gleichwertig, wenn eine aus dem Checkout und eine aus
+    #: einem Verbindungshinweis stammt.
+    "psp_quelle",
     "psp_underlying",
     "psp_alle",
     "zahlungsarten",
     "wallets",
     "fraud_tools",
     "checkout_erreicht",
+    "zahlungsauswahl_erreicht",
     "gesamt_confidence",
     "dauer_s",
     "warnungen",
@@ -148,12 +197,14 @@ def result_to_row(result: ScanResult) -> dict[str, str]:
         "platform_confidence": str(result.platform.confidence) if result.platform else "",
         "psp": primary.name if primary else "",
         "psp_confidence": str(primary.confidence) if primary else "",
+        "psp_quelle": result.acquirer_source,
         "psp_underlying": (primary.underlying or "") if primary else "",
         "psp_alle": "; ".join(f"{d.name}({d.confidence})" for d in result.psps),
         "zahlungsarten": "; ".join(d.name for d in result.payment_methods),
         "wallets": "; ".join(d.name for d in result.wallets),
         "fraud_tools": "; ".join(d.name for d in result.fraud_tools),
         "checkout_erreicht": "ja" if result.checkout_reached else "nein",
+        "zahlungsauswahl_erreicht": "ja" if result.payment_selection_reached else "nein",
         "gesamt_confidence": str(result.overall_confidence),
         "dauer_s": f"{result.duration_s:.1f}",
         "warnungen": "; ".join(w.code for w in result.warnings),

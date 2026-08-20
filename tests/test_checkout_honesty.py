@@ -58,3 +58,41 @@ def test_zahlungsauswahl_ist_strenger_als_checkout_seite() -> None:
     """
     outcome = CheckoutOutcome(reached_payment=False, reached_checkout_page=True)
     assert outcome.reached_checkout_page and not outcome.reached_payment
+
+
+def test_unterschied_kommt_auch_im_ergebnis_an() -> None:
+    """Die Unterscheidung muss bis zur Anzeige durchgehalten werden.
+
+    Sie war im Outcome vorhanden, ging danach aber verloren: `ScanResult`
+    kannte nur `checkout_reached`, gefüllt aus `reached_checkout_page`. Der
+    Bericht zeigte deshalb "Checkout erreicht ✓" direkt neben der Warnung
+    "Zahlungsauswahl nicht erreicht" — beides richtig, zusammen widersprüchlich.
+
+    Belegt an snocks.com: Checkout-Seite erreicht, Shopify Payments zu 98 %
+    erkannt, Zahlungsauswahl nicht erreicht.
+    """
+    from psp_radar.core.models import ScanResult
+    from psp_radar.report import fortschritt
+
+    teilerfolg = ScanResult(
+        url="https://snocks.com", checkout_reached=True, payment_selection_reached=False
+    )
+    assert "Zahlungsauswahl nicht" in fortschritt(teilerfolg)
+
+    vollerfolg = ScanResult(
+        url="https://snocks.com", checkout_reached=True, payment_selection_reached=True
+    )
+    assert "Zahlungsauswahl erreicht" in fortschritt(vollerfolg)
+
+    ohne = ScanResult(url="https://snocks.com")
+    assert "ohne Checkout" in fortschritt(ohne)
+
+
+def test_zahlungsauswahl_stammt_aus_dem_outcome() -> None:
+    """Gleiche Absicherung wie für checkout_reached — gleiche Fehlerquelle."""
+    import inspect
+
+    from psp_radar import scanner
+
+    quelle = inspect.getsource(scanner.scan)
+    assert "outcome and outcome.reached_payment" in quelle

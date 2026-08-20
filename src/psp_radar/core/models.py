@@ -254,8 +254,19 @@ class ScanResult(BaseModel):
     wallets: list[Detection] = Field(default_factory=list)
     fraud_tools: list[Detection] = Field(default_factory=list)
 
-    #: Konnte die Checkout-Simulation die Zahlungsauswahl erreichen?
+    #: Wurde eine Checkout-Seite erreicht? Stammt aus dem `CheckoutOutcome`,
+    #: nicht daraus, ob eine Observation die Stufe CHECKOUT trägt.
     checkout_reached: bool = False
+    #: Wurde die **Zahlungsauswahl** erreicht — der Schritt, in dem der
+    #: Abwickler lädt? Das ist die schärfere und ehrlichere Aussage.
+    #:
+    #: Die Trennung ist nötig, weil beides auseinanderfällt: Bei snocks.com
+    #: wurde die Checkout-Seite erreicht und Shopify Payments zu 98 %
+    #: erkannt, die Zahlungsauswahl selbst aber nicht. Ein einziges
+    #: "Checkout erreicht ✓" neben der Warnung "Zahlungsauswahl nicht
+    #: erreicht" ist verwirrend, und Verwirrung über den erreichten Stand
+    #: ist genau die Fehlerart, die Regel 5 verhindern soll.
+    payment_selection_reached: bool = False
     #: Welche Stufen tatsächlich gelaufen sind
     stages_run: list[Stage] = Field(default_factory=list)
 
@@ -276,6 +287,84 @@ class ScanResult(BaseModel):
         """Der wahrscheinlichste echte Zahlungsabwickler, oder None."""
         gateways = [d for d in self.psps if d.role in (Role.GATEWAY, Role.ORCHESTRATOR)]
         return max(gateways, key=lambda d: d.confidence, default=None)
+
+    # ------------------------------------------------------------------
+    # Belegart des Acquirers
+    #
+    # Die Prozentzahl allein sagt zu wenig. Gemessen über 15 DACH-Shops ist
+    # der Acquirer ohne Checkout nur bei etwa einem Viertel bestimmbar
+    # (docs/BEFUNDE.md) — die Frage ist also nicht nur "wie sicher", sondern
+    # vor allem "woher". Ein im Checkout beobachteter Request an die
+    # Zahlungs-API ist etwas anderes als ein Satz auf der Seite "Lieferung
+    # und Zahlung", und beides ist etwas anderes als ein Host, der auf der
+    # Startseite auftaucht.
+    #
+    # Als computed_field, nicht als property: sonst fehlt es im JSON und die
+    # Oberfläche kann es nicht anzeigen.
+    # ------------------------------------------------------------------
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def acquirer_source(self) -> str:
+        """Woher die Aussage über den Zahlungsabwickler stammt.
+
+        - `beobachtet` — im Checkout tatsächlich geladen. Der stärkste Beleg.
+        - `angegeben` — der Händler nennt den Dienstleister selbst auf seiner
+          Zahlungsseite. Eine Aussage, nicht eine Beobachtung, aber eine, zu
+          der er oft verpflichtet ist.
+        - `vermutet` — nur indirekte Spuren: Hosts, Assets, Verbindungshinweise.
+        - `keine` — nichts gefunden.
+        """
+        psp = self.primary_psp
+        if psp is None:
+            return "keine"
+        if any(e.stage == Stage.CHECKOUT for e in psp.evidence):
+            return "beobachtet"
+        if any(e.signal_type == SignalType.PAYMENT_PAGE_TEXT for e in psp.evidence):
+            return "angegeben"
+        return "vermutet"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def acquirer_note(self) -> str:
+        """Ein Satz dazu, was das Ergebnis wert ist — oder was fehlt.
+
+        Bei `keine` ist die Unterscheidung wichtig, die im Vorgänger fehlte:
+        Ein nicht erreichter Checkout ist ein Adapterproblem, ein erreichter
+        Checkout ohne Treffer eine fehlende Signatur. Wer das verwechselt,
+        erweitert die Signaturdatenbank, während der Adapter kaputt ist.
+        """
+        quelle = self.acquirer_source
+        if quelle == "beobachtet":
+            return "Im Checkout beobachtet — der belastbarste Beleg."
+        if quelle == "angegeben":
+            return "Vom Händler auf seiner Zahlungsseite genannt, nicht im Checkout beobachtet."
+        if quelle == "vermutet":
+            return (
+                "Nur indirekte Spuren. Ohne Checkout-Beobachtung bleibt offen, "
+                "wer die Kartenzahlung tatsächlich abwickelt."
+            )
+
+        codes = {w.code for w in self.warnings}
+        if self.checkout_reached:
+            return (
+                "Checkout erreicht, aber kein bekannter Anbieter erkannt — "
+                "wahrscheinlich fehlt die Signatur. Netzwerk-Hosts manuell sichten."
+            )
+        if "checkout_cart_empty" in codes or "checkout_add_to_cart_failed" in codes:
+            return (
+                "Der Artikel landete nicht im Warenkorb, der Checkout wurde nie erreicht. "
+                "Ursache sind die Selektoren des Adapters, nicht fehlende Signaturen."
+            )
+        if "no_payment_page" in codes:
+            return (
+                "Kein Checkout und keine Zahlungsseite gefunden. "
+                "Damit gibt es keine Quelle, aus der der Abwickler hervorgehen könnte."
+            )
+        return (
+            "Nicht ermittelt. Der Abwickler lädt bei vielen Shops erst nach der "
+            "Zahlungsauswahl — dort endet die Simulation aus gutem Grund."
+        )
 
     def summary_line(self) -> str:
         """Einzeiler für Terminal und CSV."""
