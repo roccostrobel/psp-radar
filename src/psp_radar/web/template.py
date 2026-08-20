@@ -217,7 +217,8 @@ function evidenceTable(items) {
   const rows = items.map(e => `<tr><td>${esc(e.signal_type)}</td>
     <td class="mono">${esc(e.matched_value)}</td><td>${esc(e.stage)}</td>
     <td class="num">${e.weight}</td></tr>`).join("");
-  return `<details><summary>${items.length} Belege</summary><table>
+  const wort = items.length === 1 ? "Beleg" : "Belege";
+  return `<details><summary>${items.length} ${wort}</summary><table>
     <thead><tr><th>Signal</th><th>Gefunden</th><th>Stufe</th><th>Gewicht</th></tr></thead>
     <tbody>${rows}</tbody></table></details>`;
 }
@@ -320,7 +321,7 @@ function tabelleListe(daten) {
       <td class="mono">${esc(r.final_domain || r.url)}</td>
       <td>${r.platform ? esc(r.platform.name) : "—"}</td>
       <td>${main ? esc(main.name) + " " + pill(main) : '<span class="attention">nicht ermittelt</span>'}</td>
-      <td><span class="quelle q-${esc(quelle)}">${esc(QUELLE[quelle] || quelle)}</span></td>
+      <td>${main ? `<span class="quelle q-${esc(quelle)}">${esc(QUELLE[quelle] || quelle)}</span>` : "—"}</td>
       <td class="num">${r.duration_s} s</td></tr>`;
   }).join("");
 
