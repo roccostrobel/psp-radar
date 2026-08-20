@@ -35,13 +35,41 @@ Das ist **keine Fehlfunktion**, sondern eine Grenze des Verfahrens. Wer sie vers
 
 ---
 
-## Was der Acquirer-Nachweis stattdessen bräuchte
+## Der CSP-Weg: geprüft und widerlegt
 
-Drei Wege, die ohne Regelbruch funktionieren könnten — alle ungeprüft:
+Die Vermutung war, Shops müssten die PSP-Domain in `frame-src` oder `connect-src` whitelisten, **bevor** das Formular lädt — der Header wäre dann eine sichere, schnelle Abkürzung. Diese Behauptung stand mehrfach im Projekt, unter anderem als „praktisch ein Geständnis" im README.
 
-1. **CSP-Header des Checkouts.** Shops müssen die PSP-Domain in `frame-src` oder `connect-src` whitelisten, **bevor** das Formular lädt. Der Header steht auf der Zahlungsseite bereits zur Verfügung. Das ist der aussichtsreichste unerprobte Ansatz.
-2. **Preload- und Preconnect-Hinweise.** Viele Shops kündigen den PSP-Host per `<link rel="preconnect">` an, damit die Verbindung schon steht, wenn das Formular kommt.
-3. **Öffentliche Quellen.** Referenzmeldungen der PSPs, Fallstudien, Presseinformationen. Kein technischer Beleg, aber für ein Golden-Set brauchbar, wenn als solcher gekennzeichnet.
+**Messung über 15 DACH-Shops, 19.08.2026** (`scripts/pruefe_csp.py`), geprüft wurden Startseite, Warenkorb und Checkout-Pfade je Shop:
+
+| Quelle | Treffer | Anteil |
+|---|---|---|
+| CSP-Header überhaupt gesetzt | 1 von 15 | 7 % |
+| **Gateway aus CSP ableitbar** | **0 von 15** | **0 %** |
+| Gateway aus `preconnect` / `dns-prefetch` | 3 von 15 | 20 % |
+| Gateway aus Zahlungsseitentext | 1 von 15 | 7 % |
+| **Kombination aller drei** | **4 von 15** | **27 %** |
+
+Geprüfte Shops: bergfreunde, thomann, notebooksbilliger, reichelt, hessnatur, avocadostore, snocks, waterdrop, tchibo, bike24, mueller, bergzeit, globetrotter, fahrrad.de, baur.
+
+**Die Hypothese ist damit erledigt.** Deutsche Shops setzen überwiegend gar keine Content-Security-Policy — der einzige Shop mit CSP (thomann) whitelistet darin keinen Zahlungsanbieter. Die 86 Gateway-Hostmuster der Signaturdatenbank hatten nichts zu greifen.
+
+Die drei Treffer aus Verbindungshinweisen sind ausnahmslos Shopify-Shops, wo der Hinweis auf `shop.app` zeigt. Das ist ein Plattform-Artefakt, keine allgemeine Methode.
+
+### Was daraus folgt
+
+Ohne den echten Zahlungsschritt im Checkout ist der Acquirer bei etwa **einem Viertel** der deutschen Shops bestimmbar. Genau dieser Schritt ist aber
+
+- teuer (Minuten pro Shop),
+- unzuverlässig (Adapter scheitern an angepassten Frontends),
+- und bei vielen Shops erst hinter der Sicherheitsgrenze sichtbar.
+
+Das ist die ehrliche Antwort auf die Kernfrage des Projekts. Sie war nicht zu erahnen, sondern musste gemessen werden — und sie wäre früher zu haben gewesen, wenn die CSP-Behauptung beim ersten Aufschreiben geprüft worden wäre statt drei Dokumente lang wiederholt.
+
+### Verbleibende Wege
+
+1. **Öffentliche Quellen.** Referenzmeldungen der PSPs, Fallstudien, Presseinformationen. Kein technischer Beleg, für ein Golden-Set aber brauchbar, wenn als solcher gekennzeichnet.
+2. **Checkout robuster machen.** Der Weg bleibt der einzige belastbare. Er braucht bessere Adapter, keine neuen Signalquellen.
+3. **Anspruch anpassen.** Das Tool als „Shop-System und Zahlungsarten" führen und den Acquirer als Zusatz ausweisen, der in etwa einem Viertel der Fälle mitkommt.
 
 ---
 

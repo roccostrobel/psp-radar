@@ -39,9 +39,20 @@ snocks.com  ohne Checkout-Simulation  →  PSP nicht ermittelbar
 snocks.com  mit Checkout-Simulation   →  Shopify Payments, 98 %
 ```
 
-Daraus folgt aber nicht, dass jeder Shop den Checkout braucht. Wessen CSP-Header `frame-src https://*.adyen.com` enthält, ist beantwortet — die Simulation würde drei Minuten kosten und dasselbe Ergebnis liefern.
+Und die naheliegende Abkürzung funktioniert **nicht**. Frühere Fassungen dieses Textes behaupteten, der CSP-Header eines Shops verrate den Anbieter, weil dort jede Checkout-Domain whitelistet sein muss. Gemessen über 15 DACH-Shops: **1 von 15 setzt überhaupt eine CSP, 0 von 15 lassen daraus den Acquirer ableiten.** Die Behauptung war plausibel und ungeprüft.
 
-Genau diese Unterscheidung ist der **Trichter**:
+Was ohne Checkout wirklich trägt, zusammengenommen:
+
+| Quelle | Treffer bei 15 Shops |
+|---|---|
+| CSP-Header | 0 |
+| preconnect / dns-prefetch | 3 (alle Shopify) |
+| Anbietername auf der Zahlungsseite | 1 |
+| **Kombination** | **4 = 27 %** |
+
+Details und Methodik in [`docs/BEFUNDE.md`](docs/BEFUNDE.md).
+
+Der **Trichter** bleibt trotzdem sinnvoll, nur mit realistischerer Erwartung:
 
 ```
 Durchgang 1   alle URLs      ohne Browser        2–4 s     hohe Parallelität

@@ -11,7 +11,21 @@ Zwei Anforderungen unterscheiden dieses Projekt vom Vorgänger:
 
 **Der PSP ist auf der Startseite unsichtbar.** Er lädt erst im Checkout. Empirisch belegt: `snocks.com` ohne Checkout-Simulation → Shop-System zu 100 % erkannt, PSP nicht ermittelbar. Mit Simulation → Shopify Payments zu 98 %.
 
-Daraus folgt aber **nicht**, dass jeder Shop den Checkout braucht. Wessen CSP-Header `frame-src https://*.adyen.com` enthält, ist beantwortet. Genau diese Unterscheidung ist der Trichter.
+### Korrektur einer falschen Annahme
+
+Frühere Fassungen dieses Dokuments behaupteten, der CSP-Header sei „die unterschätzteste Quelle" und `frame-src https://*.adyen.com` sei „praktisch ein Geständnis". **Das ist widerlegt.** Messung über 15 DACH-Shops am 19.08.2026:
+
+| Quelle | Treffer |
+|---|---|
+| CSP-Header überhaupt gesetzt | **1 von 15** |
+| Gateway aus CSP ableitbar | **0 von 15** |
+| Gateway aus preconnect/dns-prefetch | 3 von 15 (alle Shopify) |
+| Gateway aus Zahlungsseitentext | 1 von 15 (bergfreunde → Unzer) |
+| **Gateway aus der Kombination** | **4 von 15 = 27 %** |
+
+Deutsche Shops setzen überwiegend keine Content-Security-Policy. Die Behauptung stand mehrfach im Projekt, ohne je geprüft worden zu sein — ein Lehrstück darüber, wie eine plausible Idee zur Tatsache wird, wenn niemand sie messt. Details in `docs/BEFUNDE.md`.
+
+Wer das Kapitel neu aufschlagen will, muss zuerst messen, nicht argumentieren.
 
 ## Architektur
 
