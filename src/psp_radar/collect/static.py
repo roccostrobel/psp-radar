@@ -10,6 +10,8 @@ Produkt im Warenkorb liegt.
 from __future__ import annotations
 
 import asyncio
+import re
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -105,10 +107,80 @@ PAYMENT_PAGE_MARKERS: tuple[str, ...] = (
 )
 
 
+#: Linktexte im Footer, die auf eine Zahlungsinformationsseite führen.
+#: Der Footer ist dafür die verlässlichste Stelle — dort verlinken Shops
+#: ihre Pflichtinformationen.
+LINK_MARKERS: tuple[str, ...] = (
+    "zahlungsart",
+    "zahlungsmethode",
+    "zahlungsmittel",
+    "zahlungsmöglichkeit",
+    "zahlung",
+    "bezahlen",
+    "bezahlung",
+    "lieferung und zahlung",
+    "versand und zahlung",
+    "versand & zahlung",
+    "zahlung und versand",
+    "liefer- und zahlungsbedingungen",
+    "payment",
+    "shipping",
+)
+
+
+def finde_zahlungsseiten(html: str, basis_url: str, grenze: int = 8) -> list[str]:
+    """Sucht Links zu Zahlungsinformationsseiten im HTML der Startseite.
+
+    Der wichtigere Weg als eine feste Pfadliste. Geratene Pfade scheitern an
+    Lokalpräfixen und Dateiendungen: thomann.de führt seine Seite unter
+    `/de/zahlungsarten.html`, was weder `/zahlungsarten` noch
+    `/zahlungsarten/` trifft. Bei einer Probe von acht Shops fand die
+    Pfadliste genau einen — nicht weil die anderen schweigen, sondern weil
+    die Adressen anders lauten.
+
+    Shops verlinken ihre Pflichtinformationen im Footer. Diese Links zu
+    lesen statt Adressen zu erraten ist der Unterschied zwischen einem
+    Sonderfall und einer Methode.
+    """
+    gefunden: list[str] = []
+    gesehen: set[str] = set()
+
+    # href und Linktext zusammen betrachten: Manche Shops haben sprechende
+    # Adressen, andere sprechende Texte, und beides zusammen trifft mehr.
+    for treffer in re.finditer(
+        r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.{0,200}?)</a>',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        href, inner = treffer.group(1), treffer.group(2)
+        if href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+
+        linktext = re.sub(r"<[^>]+>", " ", inner).strip().lower()
+        haystack = f"{href.lower()} {linktext}"
+
+        if not any(marker in haystack for marker in LINK_MARKERS):
+            continue
+
+        ziel = urljoin(basis_url, href)
+        # Nur innerhalb derselben Domain bleiben
+        if urlparse(ziel).hostname != urlparse(basis_url).hostname:
+            continue
+        if ziel in gesehen:
+            continue
+
+        gesehen.add(ziel)
+        gefunden.append(ziel)
+        if len(gefunden) >= grenze:
+            break
+
+    return gefunden
+
+
 def looks_like_payment_page(url: str, text: str) -> bool:
     """Ob eine Seite tatsächlich über Zahlungsarten informiert.
 
-    Zwei Bedingungen, absichtlich beide: Der Pfad muss danach aussehen
+    Zwei Bedingungen, absichtlich beide: Die Adresse muss danach aussehen
     **und** der Text muss es bestätigen. Ein Shop, der für unbekannte Pfade
     eine 200er-Startseite ausliefert, würde sonst fälschlich als
     Zahlungsseite gelten — und dort ein zufällig erwähnter Anbietername
@@ -117,9 +189,18 @@ def looks_like_payment_page(url: str, text: str) -> bool:
     low_url = url.lower()
     pfad_passt = any(
         teil in low_url
-        for teil in ("zahl", "payment", "lieferung", "versand", "bezahl", "shipping")
+        for teil in (
+            "zahl",
+            "payment",
+            "lieferung",
+            "liefer",
+            "versand",
+            "bezahl",
+            "shipping",
+            "checkout",
+        )
     )
-    low_text = text[:20000].lower()
+    low_text = text[:40000].lower()
     text_passt = sum(marker in low_text for marker in PAYMENT_PAGE_MARKERS) >= 1
     return pfad_passt and text_passt
 
@@ -151,6 +232,23 @@ async def _fetch(client: httpx.AsyncClient, url: str) -> httpx.Response | None:
         return await client.get(url)
     except httpx.HTTPError:
         return None
+
+
+async def hole_absolut(
+    client: httpx.AsyncClient,
+    url: str,
+    semaphore: asyncio.Semaphore,
+    normalized: NormalizeResult,
+    config: ScanConfig,
+) -> Observation | None:
+    """Holt eine vollständige URL, robots-konform und gedrosselt."""
+    if not normalized.may_fetch(url, config.user_agent, config.respect_robots):
+        return None
+    async with semaphore:
+        antwort = await _fetch(client, url)
+    if antwort is None or antwort.status_code != 200 or len(antwort.text) < 500:
+        return None
+    return _observation_from_response(antwort)
 
 
 async def _probe_wellknown(
@@ -257,6 +355,21 @@ async def collect_static(
 
         weitere = await asyncio.gather(*(hole(p) for p in EXTRA_PAGES))
         observations.extend(o for o in weitere if o is not None)
+
+        # Zusätzlich die im Footer verlinkten Zahlungsseiten. Wichtiger als
+        # die geratene Pfadliste: Bei einer Probe über acht Shops fand die
+        # Liste nur einen, weil Lokalpräfixe (/de/) und Dateiendungen
+        # (.html) nicht getroffen wurden.
+        if home is not None:
+            bereits = {o.source_url.rstrip("/") for o in observations}
+            entdeckt = [
+                u
+                for u in finde_zahlungsseiten(home.text, normalized.final_url)
+                if u.rstrip("/") not in bereits
+            ]
+            if entdeckt:
+                aus_links = await asyncio.gather(*(hole_absolut(client, u, semaphore, normalized, config) for u in entdeckt))
+                observations.extend(o for o in aus_links if o is not None)
 
     if not any(o.is_payment_page for o in observations):
         warnings.append(
