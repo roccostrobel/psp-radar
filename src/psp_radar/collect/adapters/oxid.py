@@ -16,14 +16,20 @@ separaten Weiter-Button. Wer die übersieht, landet nie im Warenkorb.
 
 from __future__ import annotations
 
-import asyncio
 from urllib.parse import urljoin
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
 from ...config import ScanConfig
-from .base import CheckoutAdapter, fill_first, safe_click, try_selectors
+from ..waiting import (
+    read_cart_count,
+    wait_for_selector_any,
+    wait_for_text,
+    wait_for_url_change,
+    wait_until,
+)
+from .base import CheckoutAdapter, fill_first, safe_click, safe_goto, try_selectors
 
 
 class OxidAdapter(CheckoutAdapter):
@@ -74,19 +80,23 @@ class OxidAdapter(CheckoutAdapter):
     )
 
     async def add_to_cart(self, page: Page, config: ScanConfig) -> bool:
-        """Erst Varianten wählen, dann kaufen, dann die Zwischenschicht wegklicken."""
+        """Erst Varianten wählen, dann kaufen, dann die Zwischenschicht wegklicken.
+
+        Der Rückgabewert war früher immer `True`, sobald der Klick abgesetzt
+        war. Genau das machte bergfreunde.de zu einem stillen Fehlschlag: Die
+        Kachel-Variante war nicht gewählt, der Button blieb wirkungslos, und
+        die Simulation lief bis zur Meldung "Checkout erreicht" weiter.
+        """
+        vorher = await read_cart_count(page)
         await self._select_tile_variants(page)
-        await asyncio.sleep(1.0)
 
         if not await try_selectors(page, self.ADD_TO_CART, timeout=4.0):
             return False
 
-        await asyncio.sleep(2.5)
         # Bestätigungsschicht überspringen, falls vorhanden. Ob sie erscheint,
         # ist je nach Theme unterschiedlich — deshalb kein harter Fehler.
         await try_selectors(page, self.AFTER_ADD, timeout=3.0)
-        await asyncio.sleep(1.5)
-        return True
+        return await self.cart_grew(page, vorher)
 
     async def _select_tile_variants(self, page: Page) -> None:
         """Wählt Varianten, die als anklickbare Kacheln umgesetzt sind.
@@ -110,13 +120,25 @@ class OxidAdapter(CheckoutAdapter):
                         value = await option.get_attribute("value")
                         if value and await option.get_attribute("disabled") is None:
                             await box.select_option(value, timeout=2500)
-                            await asyncio.sleep(1.2)
+                            await self._warte_auf_freigabe(page)
                             break
         except PlaywrightError:
             pass
 
-        # Dann Kachel-Varianten
+        if await self._button_frei(page):
+            return
+
+        # Dann Kachel-Varianten. Die ersten beiden Muster sind Shop-eigene
+        # Testanker und Zugänglichkeitsattribute — sie überleben einen
+        # Designumbau, Klassennamen nicht. Bei bergfreunde.de führte genau
+        # diese Reihenfolge zum Ziel, während `.variants a` ins Leere lief:
+        # das Frontend ist mit Tailwind gebaut und hat keine sprechenden
+        # Klassen mehr.
         tile_selectors = (
+            "[data-codecept*='variant' i]:not([disabled])",
+            "[data-testid*='variant' i]:not([disabled])",
+            "[role='radio']:not([aria-disabled='true']):not([disabled])",
+            "label:has(input[type='radio']:not([disabled]))",
             ".variants a:not([class*='disabled']):not([class*='soldout'])",
             "[class*='variant'] li:not([class*='disabled']) a",
             "[class*='size'] a:not([class*='disabled'])",
@@ -134,34 +156,55 @@ class OxidAdapter(CheckoutAdapter):
                     if not await tile.is_visible(timeout=600):
                         continue
                     text = (await tile.inner_text(timeout=1000) or "").lower()
-                    if any(k in text for k in ("ausverkauft", "nicht verfügbar", "sold out")):
+                    if any(
+                        k in text
+                        for k in ("ausverkauft", "nicht verfügbar", "nicht lieferbar", "sold out")
+                    ):
                         continue
                     if await safe_click(tile, timeout=2.5):
-                        await asyncio.sleep(1.5)
-                        return
+                        await self._warte_auf_freigabe(page)
+                        if await self._button_frei(page):
+                            return
             except PlaywrightError:
                 continue
 
+    async def _warte_auf_freigabe(self, page: Page) -> None:
+        """Wartet, bis der Warenkorb-Button freigegeben ist.
+
+        Ersetzt die früheren `sleep(1.2)` und `sleep(1.5)`. OXID-Shops laden
+        nach der Variantenwahl die Verfügbarkeit per AJAX nach; wie lange das
+        dauert, weiss man vorher nicht. Ein fester Wert war für schnelle
+        Shops Verschwendung und für langsame zu kurz — und zu kurz heisst
+        hier: Klick auf einen noch gesperrten Button, also stiller Fehlschlag.
+        """
+        await wait_until(lambda: self._button_frei(page), timeout=6.0)
+
+    #: Marken der OXID-Kundenseite — der Schritt vor der Zahlungsauswahl
+    KUNDENSEITE = ("gastbestellung", "als gast", "rechnungsadresse", "anmelden")
+
     async def go_to_checkout(self, page: Page, base_url: str, config: ScanConfig) -> bool:
-        if await try_selectors(page, self.TO_CHECKOUT, timeout=4.0):
-            await asyncio.sleep(3.0)
+        vorher = page.url
+        if await try_selectors(page, self.TO_CHECKOUT, timeout=4.0) and (
+            await wait_for_url_change(page, vorher, timeout=12.0)
+            or await wait_for_text(page, self.KUNDENSEITE, timeout=8.0)
+        ):
             return True
 
         for path in ("/kunde/", "/?cl=user", "/index.php?cl=user"):
-            try:
-                await page.goto(urljoin(base_url, path), wait_until="domcontentloaded", timeout=28000)
-                await asyncio.sleep(2.5)
-                body = (await page.inner_text("body", timeout=5000)).lower()
-                if any(k in body for k in ("gastbestellung", "als gast", "rechnungsadresse", "anmelden")):
-                    return True
-            except PlaywrightError:
+            if not await safe_goto(page, urljoin(base_url, path), timeout=28.0):
                 continue
+            if await wait_for_text(page, self.KUNDENSEITE, timeout=8.0):
+                return True
         return False
 
     async def fill_guest_details(self, page: Page, config: ScanConfig) -> bool:
         """Gast-Bestellung wählen und die Rechnungsadresse ausfüllen."""
-        await try_selectors(page, self.GUEST_CHECKOUT, timeout=3.0)
-        await asyncio.sleep(2.5)
+        if await try_selectors(page, self.GUEST_CHECKOUT, timeout=3.0):
+            await wait_for_selector_any(
+                page,
+                ("input[name*='oxfname' i]", "input[name*='lgn_usr' i]", "input[type='email']"),
+                timeout=8.0,
+            )
 
         filled = False
         filled |= await fill_first(
@@ -191,6 +234,4 @@ class OxidAdapter(CheckoutAdapter):
         filled |= await fill_first(
             page, ("input[name*='oxcity' i]", "input[name*='city' i]", "input[name*='ort' i]"), config.dummy_city
         )
-
-        await asyncio.sleep(2.0)
         return filled

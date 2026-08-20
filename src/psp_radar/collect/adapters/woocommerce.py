@@ -8,14 +8,14 @@ sind nur die Kernklassen von Woo selbst (`.single_add_to_cart_button`,
 
 from __future__ import annotations
 
-import asyncio
 from urllib.parse import urljoin
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
 from ...config import ScanConfig
-from .base import CheckoutAdapter, fill_first
+from ..waiting import read_cart_count, wait_for_text
+from .base import CheckoutAdapter, fill_first, safe_goto
 
 
 class WooCommerceAdapter(CheckoutAdapter):
@@ -44,6 +44,8 @@ class WooCommerceAdapter(CheckoutAdapter):
         if await super().add_to_cart(page, config):
             return True
 
+        vorher = await read_cart_count(page)
+
         # Produkt-ID aus dem Markup ziehen und per URL anlegen
         try:
             product_id = await page.evaluate(
@@ -58,27 +60,19 @@ class WooCommerceAdapter(CheckoutAdapter):
                 """
             )
             if product_id:
-                await page.goto(
-                    f"{page.url.split('?')[0]}?add-to-cart={product_id}",
-                    wait_until="domcontentloaded",
-                    timeout=25000,
-                )
-                await asyncio.sleep(2.0)
-                return True
+                ziel = f"{page.url.split('?')[0]}?add-to-cart={product_id}"
+                if await safe_goto(page, ziel, timeout=25.0):
+                    return await self.cart_grew(page, vorher)
         except PlaywrightError:
             pass
         return False
 
     async def go_to_checkout(self, page: Page, base_url: str, config: ScanConfig) -> bool:
         for path in ("/checkout", "/kasse", "/?page_id=checkout"):
-            try:
-                await page.goto(urljoin(base_url, path), wait_until="domcontentloaded", timeout=25000)
-                await asyncio.sleep(2.5)
-                body = (await page.inner_text("body", timeout=5000)).lower()
-                if "rechnungsdetails" in body or "billing" in body or "zahlung" in body:
-                    return True
-            except PlaywrightError:
+            if not await safe_goto(page, urljoin(base_url, path), timeout=25.0):
                 continue
+            if await wait_for_text(page, ("rechnungsdetails", "billing", "zahlung"), timeout=8.0):
+                return True
         return await super().go_to_checkout(page, base_url, config)
 
     async def fill_guest_details(self, page: Page, config: ScanConfig) -> bool:
@@ -92,6 +86,7 @@ class WooCommerceAdapter(CheckoutAdapter):
         filled |= await fill_first(page, ("#billing_city",), config.dummy_city)
         filled |= await fill_first(page, ("#billing_phone",), config.dummy_phone)
 
-        # Woo lädt die Zahlungsarten per AJAX neu, sobald das Land steht
-        await asyncio.sleep(3.0)
+        # Woo lädt die Zahlungsarten per AJAX neu, sobald das Land steht.
+        # Darauf lässt sich warten — der Block trägt eine feste ID.
+        await wait_for_text(page, self.PAYMENT_MARKERS, timeout=12.0, minimum=2)
         return filled

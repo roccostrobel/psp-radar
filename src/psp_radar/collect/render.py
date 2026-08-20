@@ -19,8 +19,10 @@ from playwright.async_api import Error as PlaywrightError
 from ..config import ScanConfig
 from ..core.models import ScanWarning, Stage
 from ..core.observation import Observation
+from .adapters.base import safe_click
 from .browser import Recorder, snapshot
 from .normalize import NormalizeResult
+from .waiting import settle
 
 #: Linktexte/Pfade, die typischerweise auf eine Produktdetailseite führen
 PRODUCT_HINTS = (
@@ -136,9 +138,10 @@ async def collect_rendered(
         observations.append(await snapshot(page, recorder, Stage.RENDER))
 
         # Cookie-Banner wegklicken — dahinter laden manche Shops erst
-        # ihre Zahlungs-Widgets nach.
+        # ihre Zahlungs-Widgets nach. Danach so lange warten, wie der Shop
+        # tatsächlich nachlädt, nicht eine geratene Sekunde.
         await _dismiss_cookie_banner(page)
-        await asyncio.sleep(1.0)
+        await settle(page, lambda: len(recorder.urls), budget=6.0)
 
         product_url = await find_product_url(page, normalized.final_url)
         if product_url is None:
@@ -155,7 +158,9 @@ async def collect_rendered(
         mark = len(recorder.urls)
 
         if await _goto(page, product_url, config.page_timeout):
-            await asyncio.sleep(1.5)  # BNPL-Widgets laden verzögert
+            # BNPL-Widgets laden verzögert. Sie melden sich über das Netz,
+            # also ist Netzruhe die richtige Bedingung.
+            await settle(page, lambda: len(recorder.urls), budget=8.0)
             observations.append(await snapshot(page, recorder, Stage.RENDER, since=mark))
         else:
             warnings.append(
@@ -176,7 +181,26 @@ async def _dismiss_cookie_banner(page: Page) -> None:
 
     Bewusst nur Zustimmen-Buttons: Ablehnen würde in vielen Shops genau die
     Skripte blockieren, die wir sehen wollen. Es werden keine Daten
-    übermittelt, die über einen normalen Seitenbesuch hinausgehen.
+    übermittelt, die über einen normalen Seitenbesuch hinausgehen — der
+    Browserkontext ist ein Wegwerfkontext ohne Profil, ohne Anmeldung und
+    ohne personenbezogene Daten, und er wird nach dem Scan verworfen.
+
+    Unterschied zu `docs/VERIFIKATION.md`, wo die datensparsame Option
+    vorgeschrieben ist: Dort klickt ein Mensch in seinem echten Browser mit
+    echtem Profil. Das ist eine andere Lage als ein leerer Kontext, der
+    Sekunden später gelöscht wird.
+
+    Ob Ablehnen die Erkennung tatsächlich verschlechtert, ist **nicht
+    gemessen**. Die Vermutung ist plausibel — Zahlungsskripte gelten meist
+    als technisch notwendig, Tracker nicht —, aber genau solche plausiblen
+    Vermutungen haben in diesem Projekt schon einmal drei Dokumente lang als
+    Tatsache gegolten (siehe `docs/BEFUNDE.md`). Wer es ändern will, misst
+    erst.
+
+    Geklickt wird über `safe_click`. Ein Consent-Button trägt nie eine
+    Kaufbeschriftung, die Prüfung kostet also nichts — aber sie stellt
+    sicher, dass es im Beschaffungscode **keinen** Klickpfad gibt, der die
+    Sperrliste umgeht.
     """
     selectors = (
         "#onetrust-accept-btn-handler",
@@ -195,10 +219,7 @@ async def _dismiss_cookie_banner(page: Page) -> None:
 
     for selector in selectors:
         try:
-            element = page.locator(selector).first
-            if await element.is_visible(timeout=1200):
-                await element.click(timeout=2500)
-                await asyncio.sleep(0.8)
+            if await safe_click(page.locator(selector).first, timeout=1.2):
                 return
         except PlaywrightError:
             continue

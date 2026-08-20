@@ -242,7 +242,12 @@ def build_app(db_path: Path | None = None) -> FastAPI:
 
 def _dedupe(urls: list[str]) -> list[str]:
     seen: set[str] = set()
-    return [u for u in urls if not (u in seen or seen.add(u))]
+    eindeutig: list[str] = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            eindeutig.append(u)
+    return eindeutig
 
 
 def serve(host: str = "127.0.0.1", port: int = 8765, db_path: Path | None = None) -> None:

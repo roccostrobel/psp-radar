@@ -8,14 +8,13 @@ internationale Erkennungstools reihenweise übersehen.
 
 from __future__ import annotations
 
-import asyncio
 from urllib.parse import urljoin
 
-from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
 from ...config import ScanConfig
-from .base import CheckoutAdapter, fill_first
+from ..waiting import wait_for_selector_any, wait_for_text
+from .base import CheckoutAdapter, fill_first, safe_goto, try_selectors
 
 
 class ShopwareAdapter(CheckoutAdapter):
@@ -41,36 +40,42 @@ class ShopwareAdapter(CheckoutAdapter):
         ".btn-checkout",
     )
 
+    #: Shopware nennt die Gast-Option je nach Version anders
+    GUEST_CHECKOUT = (
+        "input#guest",
+        "input[name='guest']",
+        "label:has-text('Gastbestellung')",
+        "a:has-text('Weiter als Gast')",
+    )
+
     async def go_to_checkout(self, page: Page, base_url: str, config: ScanConfig) -> bool:
-        """Shopware 6 nutzt /checkout/confirm, Shopware 5 /checkout/shippingPayment."""
+        """Shopware 6 nutzt /checkout/confirm, Shopware 5 /checkout/shippingPayment.
+
+        `/checkout/confirm` ist die Übersichtsseite, auf der auch der
+        Kaufbutton steht. Sie zu **öffnen** ist unbedenklich — sie zeigt nur
+        an. Geklickt wird dort nichts: `safe_click` blockiert jeden
+        Kaufbutton, und `safe_goto` verhindert, dass die Pfadsuche
+        versehentlich auf `/checkout/finish` landet.
+        """
         for path in ("/checkout/confirm", "/checkout/shippingPayment", "/checkout/register"):
-            try:
-                await page.goto(urljoin(base_url, path), wait_until="domcontentloaded", timeout=28000)
-                await asyncio.sleep(2.5)
-                body = (await page.inner_text("body", timeout=5000)).lower()
-                if any(k in body for k in ("zahlungsart", "zahlungsmethode", "versandart", "anmelden")):
-                    return True
-            except PlaywrightError:
+            if not await safe_goto(page, urljoin(base_url, path), timeout=28.0):
                 continue
+            if await wait_for_text(
+                page,
+                ("zahlungsart", "zahlungsmethode", "versandart", "anmelden"),
+                timeout=8.0,
+            ):
+                return True
         return await super().go_to_checkout(page, base_url, config)
 
     async def fill_guest_details(self, page: Page, config: ScanConfig) -> bool:
         """Shopware verlangt Gast-Registrierung mit personal*/billingAddress*-Feldern."""
-        # Gast-Bestellung aktivieren
-        for selector in (
-            "input#guest",
-            "input[name='guest']",
-            "label:has-text('Gastbestellung')",
-            "a:has-text('Weiter als Gast')",
-        ):
-            try:
-                element = page.locator(selector).first
-                if await element.is_visible(timeout=1200):
-                    await element.click(timeout=2500)
-                    await asyncio.sleep(1.0)
-                    break
-            except PlaywrightError:
-                continue
+        if await try_selectors(page, self.GUEST_CHECKOUT, timeout=1.2):
+            await wait_for_selector_any(
+                page,
+                ("input[name='personalMail']", "input[name='email']", "#personalMail"),
+                timeout=6.0,
+            )
 
         filled = False
         filled |= await fill_first(
@@ -103,5 +108,4 @@ class ShopwareAdapter(CheckoutAdapter):
             ("input[name='billingAddress[city]']", "input[name='register[billing][city]']", "#billingAddressAddressCity"),
             config.dummy_city,
         )
-        await asyncio.sleep(2.0)
         return filled

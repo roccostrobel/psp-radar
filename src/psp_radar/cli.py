@@ -276,7 +276,12 @@ def _read_urls(path: Path) -> list[str]:
         ]
 
     seen: set[str] = set()
-    return [u for u in urls if not (u in seen or seen.add(u))]
+    eindeutig: list[str] = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            eindeutig.append(u)
+    return eindeutig
 
 
 def main() -> None:

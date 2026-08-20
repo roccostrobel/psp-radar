@@ -105,20 +105,142 @@ class ScanConfig(BaseModel):
 #: praktisch jeder deutsche Kaufbutton "pflichtig" — "zahlungspflichtig
 #: bestellen", "kostenpflichtig bestellen", "zahlungspflichtig buchen".
 #: Ein einzelnes Muster deckt damit die gesamte Familie ab.
+#:
+#: **Diese Liste darf nur erweitert, nie gekürzt werden.**
 FORBIDDEN_SUBMIT_PATTERNS = (
     r"pflichtig",
     r"kaufen",
+    # "Kauf abschliessen" enthält kein "kaufen" — eigene Zeile nötig
+    r"kauf\s*(?:abschlie|bestätig|bestatig|absenden|tätigen|taetigen)",
     r"jetzt\s*bestellen",
     r"verbindlich\s*bestell",
-    r"bestellung\s*(?:abschlie|absenden|abschicken|aufgeben)",
-    r"zahlung\s*(?:jetzt\s*)?(?:ausf|abschlie|best)",
+    r"bestellung\s*(?:abschlie|absenden|abschicken|aufgeben|bestätig|bestatig|bezahl)",
+    r"bestellen\s*(?:und|&)\s*(?:be)?zahlen",
+    r"zahlung\s*(?:jetzt\s*)?(?:ausf|abschlie|best|freigeb)",
+    # "Jetzt zahlen" / "Jetzt bezahlen" — häufig auf der Zahlungsseite
+    r"jetzt\s*(?:be)?zahlen",
+    r"jetzt\s*(?:buchen|abschlie|beauftrag)",
+    r"buchung\s*(?:abschlie|bestätig|bestatig)",
+    # "Weiter und bezahlen", "Review and pay", "Confirm & pay"
+    r"(?:and|und|&)\s*(?:pay|(?:be)?zahlen)\b",
     r"order\s*now",
     r"place\s*(?:your\s*)?order",
-    r"complete\s*(?:your\s*)?(?:order|purchase)",
-    r"submit\s*order",
+    r"complete\s*(?:your\s*)?(?:order|purchase|payment)",
+    r"submit\s*(?:your\s*)?order",
     r"pay\s*now",
-    r"confirm\s*(?:and|und|&)?\s*pay",
+    r"confirm\s*(?:and|und|&)?\s*(?:pay|order|purchase)",
     r"finish\s*(?:and|&)?\s*pay",
     r"buy\s*now",
     r"purchase\s*now",
+    r"checkout\s*(?:and|&)\s*pay",
+    # Abos und Spenden lösen ebenfalls eine Zahlungspflicht aus
+    r"abonnier",
+    r"subscribe",
+    r"spenden",
+    r"donate",
+    # Nicht-DACH-Kaufbuttons. Ausserhalb des Schwerpunkts, aber ein
+    # Muster kostet nichts und ein Fehlklick kostet eine Bestellung.
+    r"comprar",
+    r"acheter",
+    r"acquista",
+    r"koop\s*nu",
+    r"bestel\s*nu",
+    r"köp\s*nu",
+)
+
+#: Beschriftungen, die **allein stehend** eine Bestellung auslösen können.
+#:
+#: Diese brauchen eine eigene Behandlung, weil sie als Teilwort harmlos sind.
+#: "Als Gast bestellen" muss geklickt werden dürfen, ein Button, auf dem nur
+#: "Bestellen" steht, nicht. Ein Substring-Verbot auf "bestellen" würde
+#: entweder zu viel oder zu wenig blockieren — deshalb wird hier die
+#: **vollständige Beschriftung** verglichen, nicht ein Vorkommen darin.
+#:
+#: Dass damit auch harmlose Weiter-Buttons wie ein blosses "Bestätigen"
+#: blockiert werden, ist beabsichtigt. Es kostet bei manchen Shops ein
+#: Signal. Die Alternative wäre, auf der letzten Seite vor dem Kaufbutton zu
+#: raten, welches "Bestätigen" gemeint ist.
+FORBIDDEN_STANDALONE_LABELS = (
+    "bestellen",
+    "bestellung",
+    "kaufen",
+    "kauf",
+    "bezahlen",
+    "zahlen",
+    "abschicken",
+    "absenden",
+    "abschliessen",
+    "abschließen",
+    "bestätigen",
+    "bestatigen",
+    "order",
+    "pay",
+    "buy",
+    "purchase",
+    "submit",
+    "confirm",
+    "checkout & pay",
+)
+
+#: Formularfelder, in die **niemals** etwas eingetragen wird.
+#:
+#: Der Gast-Checkout wird mit erkennbar synthetischen Adressdaten befüllt,
+#: damit die Zahlungsauswahl überhaupt erscheint. Zahlungsdaten gehören
+#: ausdrücklich nicht dazu — auch keine Testkartennummern. Ein Feld gilt als
+#: Zahlungsfeld, wenn `name`, `id`, `autocomplete`, `placeholder` oder
+#: `aria-label` eines dieser Muster enthält.
+#:
+#: Geprüft wird beim Ausfüllen, nicht beim Zusammenstellen der Selektoren.
+#: Der Grund: Selektorlisten wachsen, und `input[name*='address' i]` kann
+#: auf einer ungewöhnlich gebauten Seite auch ein Feld der Kartenmaske
+#: treffen. Die Sperre sitzt deshalb an der Stelle, die alle Wege passieren.
+FORBIDDEN_FIELD_PATTERNS = (
+    r"\bcc[-_]?(?:num|number|name|exp|csc|cvc|cvv)",
+    r"card[-_]?(?:num|number|holder|name|expiry|exp|month|year)",
+    r"kreditkarte",
+    r"kartennummer",
+    r"\bcvc\b",
+    r"\bcvv\b",
+    r"\bcsc\b",
+    r"security[-_]?code",
+    r"pr(?:ü|ue)fnummer",
+    r"\biban\b",
+    r"\bbic\b",
+    r"kontonummer",
+    r"bankleitzahl",
+    r"account[-_]?number",
+    r"routing[-_]?number",
+    r"sort[-_]?code",
+    r"expir(?:y|ation)",
+    r"\bpassword\b",
+    r"\bpasswort\b",
+    r"\bpin\b",
+    r"\bsepa\b",
+    r"mandat",
+)
+
+#: URL-Bestandteile, die auf einen Bestellabschluss hindeuten. Es wird nie
+#: dorthin navigiert — auch nicht per GET.
+#:
+#: Anlass: Die Adapter raten Checkout-Pfade (`/checkout/confirm`,
+#: `/?cl=user`). Raten ist hier vertretbar, weil diese Seiten nur anzeigen.
+#: Ein geratener Pfad wie `/checkout/finish` wäre es nicht. Ein sauber
+#: gebauter Shop führt eine Bestellung nicht auf ein GET aus — aber sich
+#: darauf zu verlassen, dass fremder Code sauber gebaut ist, ist keine
+#: Sicherheitsmassnahme.
+FORBIDDEN_URL_PATTERNS = (
+    r"/checkout/finish",
+    r"/checkout/(?:place|submit)",
+    r"/order/(?:place|submit|finish|create|confirm)",
+    r"/bestellung/(?:abschlie|absenden|bestaetig)",
+    r"place[-_]?order",
+    r"submit[-_]?order",
+    r"confirm[-_]?order",
+    r"complete[-_]?order",
+    r"order[-_]?received",
+    r"order[-_]?success",
+    r"danke[-_]?f(?:ü|ue)r[-_]?(?:ihre|deine)[-_]?bestellung",
+    r"thank[-_]?you[-_]?for[-_]?your[-_]?order",
+    r"cl=order",
+    r"cl=thankyou",
 )

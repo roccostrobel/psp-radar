@@ -7,7 +7,6 @@ sich zuverlässig aus `/products.json` holen. Kein Raten nötig.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from urllib.parse import urljoin
 
@@ -15,7 +14,8 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
 from ...config import ScanConfig
-from .base import CheckoutAdapter
+from ..waiting import read_cart_count, wait_for_text, wait_until
+from .base import CheckoutAdapter, safe_goto
 
 
 class ShopifyAdapter(CheckoutAdapter):
@@ -72,20 +72,34 @@ class ShopifyAdapter(CheckoutAdapter):
                 variant_id,
             )
             if result:
-                await asyncio.sleep(1.5)
-                return True
+                # Die Cart-API meldet Erfolg selbst; trotzdem gegenprüfen,
+                # denn ein 200 auf /cart/add.js heisst nicht zwingend, dass
+                # der Artikel lieferbar war.
+                return await wait_until(lambda: self._im_warenkorb(page), timeout=8.0)
         except PlaywrightError:
             pass
         return False
 
+    async def _im_warenkorb(self, page: Page) -> bool:
+        return await read_cart_count(page) > 0
+
     async def go_to_checkout(self, page: Page, base_url: str, config: ScanConfig) -> bool:
         """Shopify hat einen festen Checkout-Pfad."""
-        try:
-            await page.goto(urljoin(base_url, "/checkout"), wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(3.5)
-            return "checkout" in page.url.lower()
-        except PlaywrightError:
+        if not await safe_goto(page, urljoin(base_url, "/checkout"), timeout=30.0):
             return await super().go_to_checkout(page, base_url, config)
+        if "checkout" not in page.url.lower():
+            return await super().go_to_checkout(page, base_url, config)
+        # Shopifys Checkout rendert clientseitig — auf Inhalt warten, nicht
+        # auf eine Sekundenzahl. Unter Last (zwei Chromium-Instanzen
+        # gleichzeitig) waren die früheren 3,5 s regelmässig zu kurz, und
+        # genau daran scheiterte snocks.com über die Oberfläche, während es
+        # über die Kommandozeile im selben Durchlauf funktionierte.
+        await wait_for_text(
+            page,
+            (*self.PAYMENT_MARKERS, "kontakt", "lieferung", "e-mail", "versand"),
+            timeout=20.0,
+        )
+        return True
 
     async def fill_guest_details(self, page: Page, config: ScanConfig) -> bool:
         """Shopifys Checkout nutzt eigene Feldnamen."""
@@ -102,7 +116,6 @@ class ShopifyAdapter(CheckoutAdapter):
         filled |= await fill_first(page, ("input[name='address1']",), config.dummy_street)
         filled |= await fill_first(page, ("input[name='postalCode']",), config.dummy_zip)
         filled |= await fill_first(page, ("input[name='city']",), config.dummy_city)
-        await asyncio.sleep(1.5)
         return filled
 
     @staticmethod

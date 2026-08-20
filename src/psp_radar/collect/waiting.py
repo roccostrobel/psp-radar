@@ -183,7 +183,7 @@ async def read_cart_count(page: Page) -> int:
     nicht mit "leer" verwechselt wird.
     """
     try:
-        return await page.evaluate(
+        rohwert = await page.evaluate(
             """
             async () => {
               // Shopify: offizielle Cart-API
@@ -217,6 +217,11 @@ async def read_cart_count(page: Page) -> int:
             """
         )
     except PlaywrightError:
+        return -1
+
+    try:
+        return int(rohwert)
+    except (TypeError, ValueError):
         return -1
 
 

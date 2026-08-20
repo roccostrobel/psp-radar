@@ -30,6 +30,7 @@ from .adapters import pick_adapter
 from .adapters.shopify import ShopifyAdapter
 from .browser import Recorder, snapshot
 from .normalize import NormalizeResult
+from .waiting import settle
 
 
 @dataclass
@@ -78,7 +79,7 @@ async def simulate_checkout(
 
         try:
             await page.goto(product_url, wait_until="domcontentloaded", timeout=config.page_timeout * 1000)
-            await asyncio.sleep(1.5)
+            await settle(page, lambda: len(recorder.urls), budget=6.0)
         except PlaywrightError:
             outcome.warnings.append(
                 ScanWarning(
@@ -104,11 +105,30 @@ async def simulate_checkout(
             return outcome
 
         outcome.steps.append("In den Warenkorb gelegt")
+        # Höflichkeit gegenüber dem Shop, keine Wartebedingung: zwischen zwei
+        # Zugriffen auf dieselbe Domain wird bewusst pausiert.
         await asyncio.sleep(config.delay_between_requests)
 
         # --- Warenkorb und Checkout ---
-        await adapter.go_to_cart(page, normalized.final_url, config)
-        outcome.steps.append("Warenkorb geöffnet")
+        # Der Rückgabewert wird ausgewertet, nicht verworfen. Vorher lief die
+        # Simulation auch mit leerem Warenkorb weiter und meldete am Ende
+        # einen Checkout — die Fehlerart, die Regel 5 in CLAUDE.md verbietet.
+        if not await adapter.go_to_cart(page, normalized.final_url, config):
+            outcome.warnings.append(
+                ScanWarning(
+                    code="checkout_cart_empty",
+                    message=(
+                        "Warenkorb blieb leer — der Klick auf 'In den Warenkorb' "
+                        "hat nichts bewirkt. Kein Adapterproblem bei den Signaturen, "
+                        "sondern bei den Selektoren."
+                    ),
+                    stage=Stage.CHECKOUT,
+                )
+            )
+            outcome.observations.append(await snapshot(page, recorder, Stage.CHECKOUT, since=mark))
+            return outcome
+
+        outcome.steps.append("Warenkorb geöffnet, Artikel enthalten")
 
         if not await adapter.go_to_checkout(page, normalized.final_url, config):
             outcome.warnings.append(
@@ -135,7 +155,11 @@ async def simulate_checkout(
             await adapter.advance(page, config, steps=3)
             outcome.reached_payment = await adapter.at_payment_selection(page)
 
-        await asyncio.sleep(3.0)  # PSP-Iframes brauchen einen Moment
+        # PSP-Iframes und -SDKs brauchen einen Moment. Sie melden sich über
+        # das Netz, also ist Netzruhe die Bedingung — und sie ist bei einem
+        # schnellen Shop nach 400 ms erfüllt, während die früheren pauschalen
+        # 3 Sekunden bei einem langsamen Shop zu kurz waren.
+        await settle(page, lambda: len(recorder.urls), budget=12.0)
         outcome.observations.append(await snapshot(page, recorder, Stage.CHECKOUT, since=mark))
 
         if outcome.reached_payment:
