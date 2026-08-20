@@ -235,6 +235,13 @@ def signatures_command(
 def eval_command(
     golden: Annotated[Path, typer.Option("--golden")] = Path("tests/golden_set.yaml"),
     live: Annotated[bool, typer.Option("--live", help="Echte Shops statt Fixtures")] = False,
+    aufzeichnen: Annotated[
+        bool,
+        typer.Option(
+            "--aufzeichnen",
+            help="Rohaufzeichnungen als Fixtures einfrieren (nur mit --live)",
+        ),
+    ] = False,
 ) -> None:
     """Misst Precision, Recall und Laufzeit gegen das Golden-Set."""
     from .eval import run_evaluation
@@ -243,7 +250,14 @@ def eval_command(
         err.print(f"[red]Golden-Set nicht gefunden:[/] {golden}")
         raise typer.Exit(1)
 
-    metrics = asyncio.run(run_evaluation(golden, live=live))
+    if aufzeichnen and not live:
+        err.print(
+            "[red]--aufzeichnen braucht --live.[/] Im Fixture-Modus gibt es "
+            "nichts aufzuzeichnen."
+        )
+        raise typer.Exit(1)
+
+    metrics = asyncio.run(run_evaluation(golden, live=live, record=aufzeichnen))
     metrics.print(console)
     raise typer.Exit(0 if metrics.passes_target() else 1)
 

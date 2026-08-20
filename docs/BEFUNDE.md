@@ -126,8 +126,38 @@ Nebeneffekt der Härtung, nicht ihr Ziel: Die fest verdrahteten Wartezeiten in C
 
 Ausserdem prüft `add_to_cart` jetzt, ob der Warenkorb tatsächlich gewachsen ist, und `checkout.py` wertet den Rückgabewert von `go_to_cart` aus statt ihn zu verwerfen. Neue Warnung `checkout_cart_empty`, die klar auf die Selektoren zeigt.
 
+### bergfreunde.de: Warenkorb funktioniert, drei geratene Selektoren waren schuld
+
+Der Fall galt seit Tagen als „Kachel-Varianten, schwierig". Nachgelesen im ausgelieferten Markup — ein einzelner GET, kein Klick — zeigten sich **drei** Fehler auf einmal:
+
+| Was der Adapter tat | Was tatsächlich dort steht |
+|---|---|
+| `.variants a` geklickt | Die `<a>` in `.variants` sind **Bildlinks** auf `bfgcdn.com`. Der Adapter klickte Produktfotos |
+| nach dem ersten Treffer aufgehört | Es gibt **zwei** Pflichtdimensionen: `js-var-dimension-color` und `js-var-dimension-size` |
+| Rückfall auf `form select` | Die einzigen zwei `<select>` der Seite sind `streamfilter[sort]` und `streamfilter[type]` — eine Option darin lädt die Seite neu, und die Produktseite ist weg |
+
+Die richtige Kachel ist `li[data-varsel="Black"]`. Shop-eigenes Attribut, trägt die Bezeichnung, überlebt einen Designumbau — im Gegensatz zu Tailwind-Klassen, von denen das Frontend nur noch generierte hat.
+
+Ergebnis nach der Korrektur: **Zahlungsauswahl erreicht, `static.unzer.com` im Checkout beobachtet, Unzer zu 99 %** — dieselbe Antwort wie aus dem Text der Zahlungsseite, auf einem unabhängigen Weg. In 93,6 s.
+
+Die Lehre ist dieselbe wie beim CSP-Header: Die Selektoren waren plausibel und nie gegen die Wirklichkeit gehalten. Zehn Minuten Markup lesen hätten Tage gespart.
+
+### Das Golden-Set misst jetzt überhaupt etwas
+
+`psp-radar eval` meldete „Shops im Set: 0", obwohl drei Einträge im Golden-Set stehen. Ursache: Einträge ohne eingefrorene Aufzeichnung wurden **stumm** übersprungen. Wer die Ausgabe las, hielt die Erkennung für nutzlos und die Messung für erledigt.
+
+Zwei Korrekturen:
+
+- Übersprungene Einträge stehen jetzt im Bericht, mit Hinweis, wie man sie aufzeichnet. Bei null gemessenen Shops sagt die Ausgabe ausdrücklich, dass 0,0 % „nichts gerechnet" heisst und nicht „nichts gefunden".
+- `psp-radar eval --live --aufzeichnen` friert die Aufzeichnungen ein. Damit liegen zu allen drei Einträgen Fixtures vor.
+
+**Messung, 20.08.2026: Recall 100 %, Precision 100 %, Shop-System 100 % — bei drei Shops, davon zwei Shopify.** Diese Zahlen sind kein erreichtes Ziel, sondern ein Regressionsschutz. Ein Set aus drei Einträgen kann keine 90 % belegen. Wer die 100 % als Erkennungsgüte zitiert, wiederholt genau den Fehler, den dieses Dokument oben beschreibt.
+
+Nebenbei gemessen: Der Offline-Lauf braucht **19 s pro Shop** reine Rechenzeit. README und CLAUDE.md behaupteten „in Sekunden". Ein doppelter Durchgang über die gesamte Signaturdatenbank ist entfernt (2 min → 58 s bei drei Shops), der Rest sind `html_regex`-Signale über mehrere Megabyte Quelltext und ist noch offen. Fixtures liegen gepackt: 28 MB → 4,3 MB.
+
 ### Was offen bleibt
 
-- **Weg 2 im Ernst:** bergfreunde.de bekommt sein Produkt weiterhin nicht in den Warenkorb. Die Kachel-Selektoren sind erweitert und warten jetzt auf die Freigabe des Buttons statt auf eine Sekundenzahl, geprüft ist das aber noch nicht.
-- **Golden-Set:** unverändert dünn. Ohne belastbare Messung bleibt der Recall eine Schätzung, und der Trichter bleibt aus gutem Grund abgeschaltet.
+- **Golden-Set:** drei Einträge, zwei davon Shopify. Das Ausbauziel von 30 Einträgen über verschiedene Shopsysteme und Anbieter steht unverändert. Bis dahin bleibt der Recall eine Schätzung und der Trichter aus gutem Grund abgeschaltet.
+- **Laufzeit der Messung:** 19 s pro Shop offline. Bei 30 Shops zehn Minuten, zu viel für jeden Commit. Braucht Messung, welche Signaltypen die Zeit kosten — nicht Raten.
 - **Weg 1:** öffentliche Quellen als Golden-Set-Grundlage, gekennzeichnet als nicht-technischer Beleg.
+- **Andere Shopsysteme:** Die Korrektur an bergfreunde betraf OXID. Shopware, WooCommerce und JTL sind nicht gegen echtes Markup geprüft, ihre Selektoren sind also weiterhin geraten. Das ist der nächste konkrete Schritt und derselbe Handgriff: Markup lesen, dann anpassen.

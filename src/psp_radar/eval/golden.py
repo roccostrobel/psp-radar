@@ -13,6 +13,7 @@ Zwei Betriebsarten:
 
 from __future__ import annotations
 
+import gzip
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,7 +23,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ..core.matching import match_all
-from ..core.models import Evidence, ScanResult, Stage
+from ..core.models import Evidence, Role, ScanResult, Stage
 from ..core.observation import Observation
 from ..core.registry import load_registry
 
@@ -71,6 +72,13 @@ class Metrics:
     """Precision, Recall und die Einzelfälle dahinter."""
 
     outcomes: list[Outcome] = field(default_factory=list)
+    #: Einträge, die übersprungen wurden, weil keine Fixture vorliegt.
+    #:
+    #: Sie **müssen** im Bericht auftauchen. Vorher wurden sie stumm
+    #: übersprungen, und die Ausgabe meldete "Shops im Set: 0" — obwohl das
+    #: Golden-Set drei Einträge hat. Wer das liest, hält die Messung für
+    #: erledigt und die Erkennung für nutzlos, und beides ist falsch.
+    ohne_fixture: list[GoldenEntry] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -138,8 +146,34 @@ class Metrics:
                 "[green]✓[/]" if ok else "[red]✗[/]",
             )
         summary.add_row("Shop-System korrekt", f"{self.platform_accuracy:.1%}", "—", "")
-        summary.add_row("Shops im Set", str(self.total), "—", "")
+        summary.add_row("Gemessene Shops", str(self.total), "—", "")
+        if self.ohne_fixture:
+            summary.add_row(
+                "Ohne Fixture (nicht gemessen)",
+                f"[yellow]{len(self.ohne_fixture)}[/]",
+                "0",
+                "[yellow]![/]",
+            )
         console.print(summary)
+
+        if self.ohne_fixture:
+            console.print(
+                "\n[yellow]![/] Diese Einträge stehen im Golden-Set, haben aber keine "
+                "eingefrorene Aufzeichnung und gehen deshalb [bold]nicht[/] in die Zahlen ein:"
+            )
+            for entry in self.ohne_fixture:
+                console.print(f"  [dim]{entry.url}[/] — erwartet [cyan]{entry.expected_psp}[/]")
+            console.print(
+                "  [dim]Aufzeichnen mit[/] psp-radar eval --live --aufzeichnen"
+            )
+
+        if not self.total:
+            console.print(
+                "\n[yellow]Kein einziger Shop gemessen.[/] Die Prozentwerte oben sind "
+                "deshalb keine schlechten Ergebnisse, sondern gar keine — 0,0 % heisst "
+                "hier 'nichts gerechnet', nicht 'nichts gefunden'."
+            )
+            return
 
         per_psp = Table(title="Nach Anbieter", header_style="bold")
         per_psp.add_column("Erwartet", style="cyan")
@@ -167,24 +201,42 @@ def load_golden(path: Path) -> list[GoldenEntry]:
 
 
 def load_fixture(name: str, directory: Path = FIXTURE_DIR) -> list[Observation]:
-    """Lädt eingefrorene Observations."""
-    path = directory / f"{name}.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
+    """Lädt eingefrorene Observations, gepackt oder ungepackt."""
+    gepackt = directory / f"{name}.json.gz"
+    if gepackt.exists():
+        with gzip.open(gepackt, "rt", encoding="utf-8") as datei:
+            data = json.load(datei)
+    else:
+        data = json.loads((directory / f"{name}.json").read_text(encoding="utf-8"))
     return [Observation.model_validate(item) for item in data["observations"]]
 
 
 def save_fixture(name: str, observations: list[Observation], directory: Path = FIXTURE_DIR) -> Path:
-    """Friert Observations für deterministische Tests ein."""
+    """Friert Observations für deterministische Tests ein — gepackt.
+
+    Warum gepackt: Eine Aufzeichnung enthält das vollständige HTML mehrerer
+    Seiten. Ungepackt sind das 5 bis 12 MB pro Shop, bei den angestrebten
+    30 Shops also mehrere hundert Megabyte im Repo. Gepackt bleiben etwa
+    5 % davon übrig, weil HTML sich extrem gut komprimiert.
+
+    Die naheliegende Alternative — das HTML kürzen — ist ausdrücklich
+    verworfen. Genau das war der schwerste Fehler des Projekts: Eine Grenze
+    auf dem HTML schnitt bei bergfreunde.de den Satz mit dem Anbieternamen
+    weg, und das Tool meldete "nichts erkannt", während die Antwort im
+    Quelltext stand. Eine Fixture, die den entscheidenden Teil nicht
+    enthält, misst nichts.
+    """
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{name}.json"
-    path.write_text(
-        json.dumps(
-            {"observations": [json.loads(o.model_dump_json()) for o in observations]},
-            indent=1,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    path = directory / f"{name}.json.gz"
+    inhalt = json.dumps(
+        {"observations": [json.loads(o.model_dump_json()) for o in observations]},
+        indent=1,
+        ensure_ascii=False,
     )
+    # mtime=0, damit dieselbe Aufzeichnung dieselbe Datei ergibt und Git
+    # keine Änderung sieht, wo keine ist.
+    with gzip.GzipFile(path, "wb", mtime=0) as datei:
+        datei.write(inhalt.encode("utf-8"))
     return path
 
 
@@ -198,7 +250,12 @@ def evaluate_observations(observations: list[Observation]) -> ScanResult:
     from ..scanner import best_platform_id
 
     registry = load_registry()
-    preliminary: dict[str, list[Evidence]] = match_all(registry, observations)
+    # Erster Durchgang nur über Plattform-Signaturen. Vorher lief hier die
+    # ganze Datenbank, und zwar zweimal — das kostete bei drei Shops zwei
+    # Minuten für eine Rechnung, die keine Netzwerkzugriffe braucht.
+    preliminary: dict[str, list[Evidence]] = match_all(
+        registry, observations, only_roles=(Role.PLATFORM,)
+    )
     platform_id = best_platform_id(registry, preliminary)
     evidence = match_all(registry, observations, detected_platform=platform_id)
 
@@ -215,8 +272,21 @@ def evaluate_observations(observations: list[Observation]) -> ScanResult:
     )
 
 
-async def run_evaluation(golden_path: Path, *, live: bool = False) -> Metrics:
-    """Rechnet das Golden-Set durch."""
+def fixture_name(entry: GoldenEntry) -> str:
+    """Dateiname der Aufzeichnung zu einem Eintrag."""
+    return entry.fixture or entry.url.replace("https://", "").replace("http://", "").replace("/", "_")
+
+
+async def run_evaluation(
+    golden_path: Path, *, live: bool = False, record: bool = False
+) -> Metrics:
+    """Rechnet das Golden-Set durch.
+
+    `record` friert dabei die Rohaufzeichnungen ein. Nur zusammen mit `live`
+    sinnvoll — im Fixture-Modus gibt es nichts aufzuzeichnen. Danach läuft
+    die Messung offline, deterministisch und in Sekunden, und **dann** sagen
+    Recall und Precision auch etwas aus.
+    """
     entries = load_golden(golden_path)
     metrics = Metrics()
 
@@ -224,13 +294,18 @@ async def run_evaluation(golden_path: Path, *, live: bool = False) -> Metrics:
         if live:
             from ..scanner import scan
 
-            result = await scan(entry.url)
+            aufzeichnung: list[Observation] = []
+            result = await scan(entry.url, record=aufzeichnung if record else None)
+            if record and aufzeichnung:
+                save_fixture(fixture_name(entry), aufzeichnung)
         else:
-            fixture_name = entry.fixture or entry.url.replace("https://", "").replace("/", "_")
             try:
-                observations = load_fixture(fixture_name)
+                observations = load_fixture(fixture_name(entry))
             except FileNotFoundError:
-                continue  # noch keine Fixture aufgezeichnet
+                # Nicht stumm überspringen — der Bericht muss zeigen, dass
+                # hier nichts gerechnet wurde.
+                metrics.ohne_fixture.append(entry)
+                continue
             result = evaluate_observations(observations)
 
         primary = result.primary_psp

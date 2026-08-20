@@ -42,6 +42,10 @@ web/       Oberfläche im Unzer-Design
 
 **`core` darf nichts aus den anderen Schichten importieren.** `tests/test_architecture.py` erzwingt das. Der Grund ist nicht Ordnungsliebe: Nur so bleibt die gesamte Erkennung offline und deterministisch gegen eingefrorene Fixtures prüfbar — und damit die Vorgabe „schneller ohne Qualitätsverlust" überhaupt überprüfbar.
 
+Fixtures liegen gepackt (`tests/fixtures/*.json.gz`). Ungepackt sind es 5 bis 12 MB pro Shop, weil sie das vollständige HTML enthalten. Sie zu **kürzen** ist verboten: Genau eine HTML-Grenze hat bei bergfreunde.de den Satz mit dem Anbieternamen abgeschnitten (siehe Regel 7). Eine Fixture ohne den entscheidenden Teil misst nichts.
+
+Der Offline-Lauf kostet gemessen **19 s pro Shop**, nicht „Sekunden". Ursache sind `html_regex`-Signale über mehrere Megabyte Quelltext. Ein doppelter Durchgang über die ganze Datenbank ist entfernt (`match_all(..., only_roles=(Role.PLATFORM,))` für die Plattformerkennung, 2 min → 58 s bei drei Shops). Der Rest ist offen.
+
 ## Unverhandelbare Regeln
 
 ### 1. Es wird nie eine Bestellung ausgelöst und nie ein Zahlungsdatum eingegeben

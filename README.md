@@ -114,7 +114,9 @@ api/       FastAPI mit Zugangscode
 web/       Oberfläche
 ```
 
-`core` importiert nichts aus den anderen Schichten — erzwungen durch `tests/test_architecture.py`. Der Grund ist praktisch: Nur so lässt sich die gesamte Erkennung offline und deterministisch gegen eingefrorene Aufzeichnungen prüfen, in Sekunden und ohne einen einzigen echten Shop anzufassen.
+`core` importiert nichts aus den anderen Schichten — erzwungen durch `tests/test_architecture.py`. Der Grund ist praktisch: Nur so lässt sich die gesamte Erkennung offline und deterministisch gegen eingefrorene Aufzeichnungen prüfen, ohne einen einzigen echten Shop anzufassen.
+
+**Nicht** „in Sekunden", wie es hier vorher stand. Gemessen: **19 Sekunden pro Shop**, reine Rechenzeit ohne Netz. Die Ursache sind `html_regex`-Signale, die über mehrere Megabyte Seitenquelltext laufen. Ein doppelter Durchgang über die gesamte Signaturdatenbank ist inzwischen entfernt (2 min → 58 s für drei Shops); der Rest ist echte Arbeit und noch nicht optimiert. Bei den angestrebten 30 Shops sind das rund zehn Minuten, und das ist zu viel für einen Lauf bei jedem Commit.
 
 ### Confidence: Noisy-OR statt Addition
 

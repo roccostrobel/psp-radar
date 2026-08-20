@@ -88,12 +88,20 @@ async def scan(
     config: ScanConfig | None = None,
     *,
     context: BrowserContext | None = None,
+    record: list[Observation] | None = None,
 ) -> ScanResult:
     """Scannt einen Shop.
 
     `context` erlaubt es, einen bereits laufenden Browser mitzubenutzen.
     Im Massenlauf spart das pro Shop einen Prozessstart; ohne Angabe wird
     ein eigener Browser gestartet und danach geschlossen.
+
+    `record` nimmt die Rohaufzeichnungen mit heraus, damit
+    `psp-radar eval --live --aufzeichnen` daraus Fixtures schreiben kann.
+    Bewusst als Parameter und nicht als Feld am `ScanResult`: `Observation`
+    liegt in `core/observation.py` und importiert aus `core/models.py`, ein
+    Feld dort wäre also ein Ringschluss. Ausserdem gehören mehrere Megabyte
+    Rohdaten nicht in ein Ergebnis, das als JSON durch API und Cache läuft.
     """
     config = config or ScanConfig()
     registry = load_registry()
@@ -235,6 +243,9 @@ async def scan(
     # Vorgängerprojekt einen halben Tag Fehlersuche in der falschen Ecke.
     checkout_reached = bool(outcome and outcome.reached_checkout_page)
     payment_reached = bool(outcome and outcome.reached_payment)
+
+    if record is not None:
+        record.extend(observations)
 
     return _finish(
         registry, evidence, url, normalized, checkout_reached, stages_run, warnings, started, tier,

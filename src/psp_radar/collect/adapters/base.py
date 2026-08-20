@@ -132,6 +132,10 @@ async def _beschriftung(locator: Locator, timeout: float) -> tuple[str, ...]:
         await locator.get_attribute("title") or "",
         await locator.get_attribute("name") or "",
         await locator.get_attribute("data-testid") or "",
+        # OXID legt die Variantenbezeichnung hierhin ("Black", "M"). Eine
+        # Farbkachel hat oft keinen sichtbaren Text, und ohne Beschriftung
+        # klickt safe_click nicht — dann bleibt der Warenkorb-Button gesperrt.
+        await locator.get_attribute("data-varsel") or "",
     ]
     try:
         bild = locator.locator("img[alt]").first
@@ -401,7 +405,15 @@ class CheckoutAdapter:
         Warenkorb" nichts tut.
         """
         try:
-            selects = page.locator("select[required], form select")
+            # Filter- und Sortierfelder ausdrücklich ausschliessen. Auf
+            # bergfreunde.de sind die einzigen beiden `<select>` einer
+            # Produktseite `streamfilter[sort]` und `streamfilter[type]`;
+            # eine Option darin auszuwählen lädt die Seite neu, und damit
+            # ist die Produktseite weg, bevor der Warenkorb-Klick kommt.
+            selects = page.locator(
+                "select[required], "
+                "form select:not([name*='filter' i]):not([id*='filter' i]):not([name*='sort' i])"
+            )
             count = min(await selects.count(), 4)
             for index in range(count):
                 select = selects.nth(index)

@@ -22,7 +22,24 @@
 # `expected_psp` und `expected_platform` sind Signatur-IDs aus
 # src/psp_detector/signatures/*.yaml — nicht Anzeigenamen.
 
-version: "2026.08.1"
+version: "2026.08.2"
+
+# STAND 20.08.2026 — was die Messung wert ist:
+#
+#   Recall 100 %, Precision 100 %, Shop-System 100 % — bei DREI Shops,
+#   von denen ZWEI Shopify sind.
+#
+# Diese Zahlen sind kein erreichtes Ziel. Ein Set aus drei Einträgen kann
+# keine 90 % Recall belegen; es kann nur belegen, dass drei bekannte Fälle
+# noch funktionieren. Genau dafür ist es da: Es ist ein Regressionsschutz,
+# keine Gütemessung. Wer die 100 % als Erkennungsgüte zitiert, macht
+# denselben Fehler wie die CSP-Behauptung in docs/BEFUNDE.md — eine
+# plausible Zahl ohne Grundlage.
+#
+# Seit dieser Fassung liegen zu allen drei Einträgen Fixtures
+# (tests/fixtures/*.json.gz), der Lauf ist also offline und deterministisch.
+# Vorher wurden Einträge ohne Fixture stumm übersprungen und `eval` meldete
+# "Shops im Set: 0" bei drei vorhandenen Einträgen.
 
 shops:
   # ------------------------------------------------------------------
@@ -74,6 +91,19 @@ shops:
       Angeboten werden ausserdem Kreditkarte (Visa, Mastercard, Amex),
       PayPal und Apple Pay. Wer die Kartenzahlung abwickelt, liess sich
       ohne Eingabe von Kartendaten nicht klären und bleibt offen.
+
+      NACHTRAG 20.08.2026: Der Warenkorb funktioniert jetzt. Ursache war
+      nicht nur die Kachel-Variante, sondern drei Dinge zusammen — der
+      Adapter klickte die Bildlinks in `.variants` statt der Kacheln
+      (`li[data-varsel]`), er wählte nur eine von zwei Dimensionen (Farbe
+      UND Grösse sind Pflicht), und sein Rückfall auf `form select` traf
+      die Sortier-Dropdowns `streamfilter[sort]`/`streamfilter[type]`, was
+      die Produktseite neu lud. Alle drei Selektoren waren geraten; jetzt
+      sind sie am ausgelieferten Markup gelesen.
+
+      Ergebnis: Zahlungsauswahl erreicht, `static.unzer.com` im
+      Checkout-Traffic beobachtet, Unzer zu 99 % — dieselbe Antwort wie
+      aus dem Text der Zahlungsseite, auf einem unabhängigen Weg.
 
   # ------------------------------------------------------------------
   # Ausbauziel für Meilenstein 4: mindestens 30 Einträge.

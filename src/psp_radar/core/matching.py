@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from functools import lru_cache
 from urllib.parse import urlparse
 
-from .models import Evidence, Signal, SignalType, Signature
+from .models import Evidence, Role, Signal, SignalType, Signature
 from .observation import Observation
 from .registry import Registry
 
@@ -146,12 +146,20 @@ def match_all(
     observations: Iterable[Observation],
     *,
     detected_platform: str | None = None,
+    only_roles: tuple[Role, ...] | None = None,
 ) -> dict[str, list[Evidence]]:
     """Gleicht alle Signaturen ab und gruppiert die Evidenz nach Signatur-ID.
 
     `detected_platform` filtert Signaturen mit `requires_platform`. Ohne
     diesen Filter würde etwa Shopify Payments auch bei einem WooCommerce-Shop
     anschlagen, sobald dort zufällig ein Shopify-Asset eingebunden ist.
+
+    `only_roles` beschränkt den Abgleich auf bestimmte Rollen. Der Grund ist
+    Laufzeit, nicht Eleganz: Die Plattformerkennung, die vor dem eigentlichen
+    Abgleich laufen muss, braucht nur die Plattform-Signaturen. Ohne diese
+    Einschränkung wurde die gesamte Signaturdatenbank zweimal über alle
+    Observations gerechnet — bei einem Shop mit mehreren Megabyte HTML sind
+    das zwanzig Sekunden, die nichts beitragen.
     """
     obs_list = list(observations)
     for obs in obs_list:
@@ -160,6 +168,8 @@ def match_all(
     results: dict[str, list[Evidence]] = {}
 
     for signature in registry.signatures:
+        if only_roles is not None and signature.role not in only_roles:
+            continue
         if signature.requires_platform and signature.requires_platform != detected_platform:
             continue
         evidence = match_signature(signature, obs_list)
